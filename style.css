@@ -605,13 +605,21 @@ body {
         background-color: #fff !important;
         color: #000 !important;
     }
+
+    /* Force block rendering for print to prevent overflow truncation */
+    html, body, .editor-container, #script-body {
+        display: block !important;
+        overflow: visible !important;
+        height: auto !important;
+        min-height: auto !important;
+        position: static !important;
+    }
     
     body {
-        height: auto;
-        overflow: visible;
         font-family: var(--font-thai);
-        margin: 0;
-        padding: 0;
+        margin: 0 !important;
+        padding: 20mm 15mm !important; /* Fail-safe margin */
+        box-sizing: border-box;
     }
 
     .top-bar, .controls-section, .add-row-container, 
@@ -659,7 +667,8 @@ body {
         border: 1px solid #000;
         margin-bottom: -1px; /* collapse border */
         border-radius: 0;
-        page-break-inside: avoid;
+        page-break-inside: auto; /* Fix truncation bug for long rows */
+        break-inside: auto;
         box-shadow: none;
         padding: 12px;
     }
