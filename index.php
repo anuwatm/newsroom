@@ -171,6 +171,18 @@ $user = $_SESSION['user'];
         </div>
     </div>
 
+    <!-- Autocomplete Popup for Structured Blocks -->
+    <ul id="cmd-autocomplete" class="cmd-autocomplete" style="display: none;">
+        <li data-val="CG 1 บรรทัด">CG 1 บรรทัด</li>
+        <li data-val="CG 2 บรรทัด">CG 2 บรรทัด</li>
+        <li data-val="VO">VO</li>
+        <li data-val="SOT">SOT</li>
+        <li data-val="LIVE">LIVE</li>
+        <li data-val="AUDIO">AUDIO</li>
+        <li data-val="VTR">VTR</li>
+        <li data-val="PHONE">PHONE</li>
+    </ul>
+
     <script>
         window.currentUser = {
             fullName: <?php echo json_encode($user['full_name']); ?>,

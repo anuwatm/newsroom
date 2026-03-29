@@ -34,6 +34,52 @@ const previewBody = document.getElementById('preview-body');
 
 let previewingStoryId = null;
 
+// Command Autocomplete Elements
+const cmdMenu = document.getElementById('cmd-autocomplete');
+let acTarget = null;
+let acCursorPos = -1;
+let acSelectedIndex = 0;
+
+function closeCmdMenu() {
+    if (cmdMenu) cmdMenu.style.display = 'none';
+    acTarget = null;
+    acSelectedIndex = 0;
+}
+
+if (cmdMenu) {
+    cmdMenu.addEventListener('click', (e) => {
+        if (e.target.tagName === 'LI' && acTarget) {
+            const valToInsert = e.target.getAttribute('data-val') + '] ';
+            const before = acTarget.value.substring(0, acCursorPos);
+            // Replace whatever they typed after [ with the final value
+            const after = acTarget.value.substring(acTarget.selectionStart);
+            acTarget.value = before + valToInsert + after;
+            acTarget.selectionStart = acTarget.selectionEnd = acCursorPos + valToInsert.length;
+            acTarget.focus();
+            closeCmdMenu();
+            updateCalculations();
+        }
+    });
+
+    document.addEventListener('click', (e) => {
+        if (cmdMenu.style.display === 'block' && e.target !== cmdMenu && !cmdMenu.contains(e.target)) {
+            closeCmdMenu();
+        }
+    });
+}
+
+function highlightCmdMenuItem() {
+    if (!cmdMenu) return;
+    const items = Array.from(cmdMenu.children).filter(li => li.style.display !== 'none');
+    Array.from(cmdMenu.children).forEach(li => li.classList.remove('active'));
+    if (items.length > 0) {
+        if (acSelectedIndex >= items.length) acSelectedIndex = 0;
+        if (acSelectedIndex < 0) acSelectedIndex = items.length - 1;
+        items[acSelectedIndex].classList.add('active');
+        items[acSelectedIndex].scrollIntoView({ block: 'nearest' });
+    }
+}
+
 // Initialize with one row if empty
 document.addEventListener('DOMContentLoaded', async () => {
     // 1. Load departments
@@ -186,6 +232,76 @@ function addNewRow(cuesArray = [], readText = '') {
     readInput.addEventListener('input', (e) => {
         autoResize(e);
         updateCalculations();
+
+        if (!cmdMenu) return;
+        const val = readInput.value;
+        const pos = readInput.selectionStart;
+
+        if (cmdMenu.style.display === 'block') {
+            if (pos < acCursorPos) {
+                closeCmdMenu();
+            } else {
+                const query = val.substring(acCursorPos, pos).toLowerCase();
+                let hasMatch = false;
+                Array.from(cmdMenu.children).forEach(li => {
+                    const dataVal = li.getAttribute('data-val').toLowerCase();
+                    if (dataVal.includes(query)) {
+                        li.style.display = 'block';
+                        hasMatch = true;
+                    } else {
+                        li.style.display = 'none';
+                    }
+                });
+                if (!hasMatch) {
+                    closeCmdMenu();
+                } else {
+                    acSelectedIndex = 0;
+                    highlightCmdMenuItem();
+                }
+            }
+        }
+
+        if (val.substring(pos - 1, pos) === '[') {
+            const rect = readInput.getBoundingClientRect();
+            cmdMenu.style.display = 'block';
+            cmdMenu.style.top = (rect.top + 30) + 'px'; 
+            cmdMenu.style.left = Math.min(rect.left + 20, window.innerWidth - 250) + 'px';
+            acTarget = readInput;
+            acCursorPos = pos;
+            
+            Array.from(cmdMenu.children).forEach(li => li.style.display = 'block');
+            acSelectedIndex = 0;
+            highlightCmdMenuItem();
+        }
+    });
+
+    readInput.addEventListener('keydown', (e) => {
+        if (cmdMenu && cmdMenu.style.display === 'block') {
+            const items = Array.from(cmdMenu.children).filter(li => li.style.display !== 'none');
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                acSelectedIndex++;
+                highlightCmdMenuItem();
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                acSelectedIndex--;
+                highlightCmdMenuItem();
+            } else if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                if (items.length > 0) {
+                    const valToInsert = items[acSelectedIndex].getAttribute('data-val') + '] ';
+                    const before = acTarget.value.substring(0, acCursorPos);
+                    const after = acTarget.value.substring(acTarget.selectionStart);
+                    acTarget.value = before + valToInsert + after;
+                    acTarget.selectionStart = acTarget.selectionEnd = acCursorPos + valToInsert.length;
+                    closeCmdMenu();
+                    autoResize({target: acTarget});
+                    updateCalculations();
+                }
+            } else if (e.key === 'Escape') {
+                closeCmdMenu();
+            }
+        }
     });
     
     // Setup cue blocks
