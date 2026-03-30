@@ -49,32 +49,32 @@ try {
         department_id INTEGER,
         status TEXT DEFAULT 'DRAFT',
         estimated_time INTEGER DEFAULT 0,
+        current_version INTEGER DEFAULT 0,
+        keywords TEXT,
+        keyword_soundex TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(department_id) REFERENCES departments(id)
     )");
 
-    // 5. Story Rows
-    $db->exec("CREATE TABLE IF NOT EXISTS story_rows (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        story_id INTEGER,
-        type TEXT,
-        left_column_json TEXT,
-        right_column_text TEXT,
-        word_count INTEGER DEFAULT 0,
-        estimated_read_time INTEGER DEFAULT 0,
-        row_order INTEGER DEFAULT 0,
-        FOREIGN KEY(story_id) REFERENCES stories(id) ON DELETE CASCADE
-    )");
+    // NOTE: story_rows table is deprecated in favor of hybrid JSON file storage
+    // But we don't drop it automatically to prevent accidental data loss of legacy stories.
+
+    // 6. Indexes for Performance (Search & Archive)
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_stories_status ON stories(status)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_stories_department ON stories(department_id)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_stories_updated_at ON stories(updated_at DESC)");
 
     // ----- SEED DATA -----
-    
+
     // Seed Roles
     $stmt = $db->query("SELECT COUNT(*) FROM roles");
     if ($stmt->fetchColumn() == 0) {
         $roles = ['นักข่าว', 'บก', 'บกกลาง', 'rewriter'];
         $insert = $db->prepare("INSERT INTO roles (name) VALUES (?)");
-        foreach ($roles as $r) { $insert->execute([$r]); }
+        foreach ($roles as $r) {
+            $insert->execute([$r]);
+        }
     }
 
     // Seed Departments
@@ -82,23 +82,25 @@ try {
     if ($stmt->fetchColumn() == 0) {
         $depts = ['การเมือง', 'สังคม', 'เศรษฐกิจ', 'กีฬา'];
         $insert = $db->prepare("INSERT INTO departments (name) VALUES (?)");
-        foreach ($depts as $d) { $insert->execute([$d]); }
+        foreach ($depts as $d) {
+            $insert->execute([$d]);
+        }
     }
 
     // Seed Users
     $stmt = $db->query("SELECT COUNT(*) FROM users");
     if ($stmt->fetchColumn() == 0) {
         $hashed = password_hash('1234', PASSWORD_BCRYPT);
-        
+
         // 1. admin (บกกลาง / การเมือง)
         $db->exec("INSERT INTO users (employee_id, full_name, password, role_id, department_id) VALUES ('admin', 'Admin (บกกลาง)', '$hashed', 3, 1)");
-        
+
         // 2. editor1 (บก / สังคม)
         $db->exec("INSERT INTO users (employee_id, full_name, password, role_id, department_id) VALUES ('editor1', 'Editor 1 (บก)', '$hashed', 2, 2)");
-        
+
         // 3. reporter1 (นักข่าว / สังคม)
         $db->exec("INSERT INTO users (employee_id, full_name, password, role_id, department_id) VALUES ('reporter1', 'Reporter 1 (นักข่าว)', '$hashed', 1, 2)");
-        
+
         // 4. rewrite1 (rewriter / กีฬา)
         $db->exec("INSERT INTO users (employee_id, full_name, password, role_id, department_id) VALUES ('rewrite1', 'Rewriter 1', '$hashed', 4, 4)");
     }

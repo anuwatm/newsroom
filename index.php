@@ -5,6 +5,12 @@ if (!isset($_SESSION['user'])) {
     exit;
 }
 $user = $_SESSION['user'];
+
+// Generate CSRF token if not exists
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrf_token = $_SESSION['csrf_token'];
 ?>
 <!DOCTYPE html>
 <html lang="th">
@@ -15,6 +21,7 @@ $user = $_SESSION['user'];
     <link rel="stylesheet" href="style.css?v=<?php echo time(); ?>">
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body>
     <!-- Print-only header -->
@@ -123,12 +130,22 @@ $user = $_SESSION['user'];
     <template id="cue-template">
         <div class="cue-block">
             <select class="cue-type meta-input">
-                <option value="CAM">CAM</option>
-                <option value="CG">CG</option>
-                <option value="VO">VO</option>
-                <option value="SOT">SOT</option>
-                <option value="LIVE">LIVE</option>
-                <option value="AUDIO">AUDIO</option>
+                <option value="CAM">CAM (ตัดหน้าผู้ประกาศ)</option>
+                <option value="VO">VO (เสียงบรรยาย)</option>
+                <option value="SOT">SOT (เสียงสัมภาษณ์)</option>
+                <option value="VOSOT">VOSOT (บรรยายเข้าสัมภาษณ์)</option>
+                <option value="PKG">PKG (รายงานข่าวสมบูรณ์)</option>
+                <option value="OC">OC (หน้าผู้ประกาศ)</option>
+                <option value="CG">CG (กราฟิก/ชื่อ)</option>
+                <option value="FS">FS (กราฟิกเต็มจอ)</option>
+                <option value="OTS">OTS (กราฟิกข้างไหล่)</option>
+                <option value="BUG">BUG (โลโก้มุมจอ)</option>
+                <option value="OUTCUE">OUTCUE (จบด้วยคำว่า...)</option>
+                <option value="TRT">TRT (ความยาวรวม)</option>
+                <option value="NATS">NATS (เสียงบรรยากาศ)</option>
+                <option value="DISS">DISS (ภาพจางซ้อน)</option>
+                <option value="LIVE">LIVE (สด)</option>
+                <option value="PHONE">PHONE (โฟนอิน)</option>
                 <option value="RAW">RAW Text</option>
             </select>
             <input type="text" class="cue-detail meta-input" placeholder="Details...">
@@ -154,33 +171,43 @@ $user = $_SESSION['user'];
         </div>
     </div>
 
-    <!-- Preview Modal -->
-    <div id="preview-modal" class="modal-overlay">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="preview-title">Preview Title</h2>
-                <button id="btn-close-preview" class="btn" style="background:transparent; color:#fff; font-size:24px; border:none; padding:0;">&times;</button>
+    <!-- Preview Window -->
+    <div id="preview-modal" class="floating-window">
+        <div class="modal-header" id="preview-header" title="Drag to move">
+            <h2 id="preview-title">Preview Title</h2>
+            <div style="display: flex; gap: 16px; align-items: center;">
+                <button id="btn-min-preview" class="btn" style="background:transparent; color:#fff; font-size:28px; border:none; padding:0; line-height: 0.8;" title="ย่อหน้าต่าง">&minus;</button>
+                <button id="btn-max-preview" class="btn" style="background:transparent; color:#fff; font-size:20px; border:none; padding:0; line-height: 1;" title="เต็มจอ">&#9744;</button>
+                <button id="btn-close-preview" class="btn" style="background:transparent; color:#fff; font-size:28px; border:none; padding:0; line-height: 0.8;" title="ปิด">&times;</button>
             </div>
-            <div id="preview-body" class="modal-body">
-                <!-- Content injected here -->
-            </div>
-            <div class="modal-footer">
-                <button id="btn-load-preview" class="btn btn-primary">เปิดแก้ไขข่าวนีี้</button>
-                <button id="btn-cancel-preview" class="btn btn-secondary">ปิด</button>
-            </div>
+        </div>
+        <div id="preview-body" class="modal-body">
+            <!-- Content injected here -->
+        </div>
+        <div class="modal-footer">
+            <button id="btn-load-preview" class="btn btn-primary">เปิดแก้ไขข่าวนีี้</button>
+            <button id="btn-cancel-preview" class="btn btn-secondary">ปิด</button>
         </div>
     </div>
 
     <!-- Autocomplete Popup for Structured Blocks -->
     <ul id="cmd-autocomplete" class="cmd-autocomplete" style="display: none;">
-        <li data-val="CG 1 บรรทัด">CG 1 บรรทัด</li>
-        <li data-val="CG 2 บรรทัด">CG 2 บรรทัด</li>
-        <li data-val="VO">VO</li>
-        <li data-val="SOT">SOT</li>
-        <li data-val="LIVE">LIVE</li>
-        <li data-val="AUDIO">AUDIO</li>
-        <li data-val="VTR">VTR</li>
-        <li data-val="PHONE">PHONE</li>
+        <li data-val="VO"><strong>VO</strong> <small>- เสียงบรรยายภาพ</small></li>
+        <li data-val="SOT"><strong>SOT</strong> <small>- เสียงสัมภาษณ์</small></li>
+        <li data-val="VOSOT"><strong>VOSOT</strong> <small>- บรรยายเข้าสัมภาษณ์</small></li>
+        <li data-val="PKG"><strong>PKG</strong> <small>- รายงานสกู๊ปข่าว</small></li>
+        <li data-val="OC"><strong>OC</strong> <small>- หน้าผู้ประกาศ</small></li>
+        <li data-val="CG 1 บรรทัด"><strong>CG 1 บรรทัด</strong> <small>- แถบชื่อผู้สัมภาษณ์</small></li>
+        <li data-val="CG 2 บรรทัด"><strong>CG 2 บรรทัด</strong> <small>- แถบชื่อและตำแหน่ง</small></li>
+        <li data-val="FS"><strong>FS</strong> <small>- กราฟิกเต็มหน้าจอ</small></li>
+        <li data-val="OTS"><strong>OTS</strong> <small>- กราฟิกข้างไหล่ (Over the Shoulder)</small></li>
+        <li data-val="BUG"><strong>BUG</strong> <small>- โลโก้มุมจอ</small></li>
+        <li data-val="OUTCUE"><strong>OUTCUE</strong> <small>- คำสุดท้ายให้พูดตาม (OC)</small></li>
+        <li data-val="TRT"><strong>TRT</strong> <small>- ระยะเวลารวม</small></li>
+        <li data-val="NATS"><strong>NATS</strong> <small>- เสียงบรรยากาศแวดล้อมจริง</small></li>
+        <li data-val="DISS"><strong>DISS</strong> <small>- เปลี่ยนภาพแบบจางซ้อน</small></li>
+        <li data-val="LIVE"><strong>LIVE</strong> <small>- ถ่ายทอดสด</small></li>
+        <li data-val="PHONE"><strong>PHONE</strong> <small>- โฟนอินพูดคุย</small></li>
     </ul>
 
     <script>
@@ -189,9 +216,10 @@ $user = $_SESSION['user'];
             roleId: <?php echo json_encode($user['role_id']); ?>,
             roleName: <?php echo json_encode($user['role_name']); ?>,
             departmentId: <?php echo json_encode($user['department_id']); ?>,
-            departmentName: <?php echo json_encode($user['department_name']); ?>
+            departmentName: <?php echo json_encode($user['department_name']); ?>,
+            csrfToken: <?php echo json_encode($csrf_token); ?>
         };
     </script>
-    <script src="app.js?v=11"></script>
+    <script type="module" src="js/main.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>

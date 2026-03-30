@@ -494,32 +494,55 @@ body {
     gap: 6px;
 }
 
-/* Modal */
-.modal-overlay {
+/* Floating Window */
+.floating-window {
     position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background-color: rgba(0,0,0,0.7);
+    top: 50px;
+    left: 50px;
+    width: 600px;
+    height: 70vh;
+    min-width: 350px;
+    min-height: 250px;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.8);
     z-index: 2000;
     display: flex;
-    justify-content: center;
-    align-items: center;
+    flex-direction: column;
+    resize: both;
+    overflow: hidden;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.2s;
 }
-.modal-overlay.open {
+.floating-window.open {
     opacity: 1;
     pointer-events: auto;
 }
-.modal-content {
-    background-color: var(--bg-surface);
-    width: 90%;
-    max-width: 800px;
-    height: 85vh;
-    border-radius: 12px;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.8);
+.floating-window.minimized {
+    top: auto !important;
+    left: 20px !important;
+    bottom: 20px !important;
+    right: auto !important;
+    width: 350px !important;
+    height: 65px !important;
+    min-height: 65px !important;
+    resize: none;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.floating-window.minimized .modal-body,
+.floating-window.minimized .modal-footer {
+    display: none;
+}
+.floating-window.maximized {
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    border-radius: 0;
+    resize: none;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .modal-header {
     padding: 20px;
@@ -527,6 +550,11 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    cursor: grab;
+    user-select: none;
+}
+.modal-header:active {
+    cursor: grabbing;
 }
 .modal-header h2 { margin: 0; font-size: 20px; }
 .modal-body {
@@ -594,6 +622,9 @@ body {
 .print-read-text {
     display: none; /* Only visible when printing */
 }
+.print-cue-text {
+    display: none; /* Only visible when printing */
+}
 
 /* Command Autocomplete */
 .cmd-autocomplete {
@@ -622,9 +653,15 @@ body {
     border-bottom: none;
 }
 .cmd-autocomplete li:hover, .cmd-autocomplete li.active {
-    background-color: var(--accent-bg);
+    background: var(--bg-hover);
     color: var(--accent);
-    font-weight: 600;
+}
+
+.cmd-autocomplete li small {
+    color: var(--text-secondary);
+    font-size: 0.85em;
+    margin-left: 6px;
+    font-weight: normal;
 }
 
 @media print {
@@ -715,27 +752,30 @@ body {
     }
 
     .cue-block {
-        margin-bottom: 4px;
-        gap: 4px;
+        margin-bottom: 8px;
+        gap: 2px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
     }
 
     .cue-type {
-        color: #000 !important;
-        font-weight: bold;
-        font-size: 14pt;
-        padding: 0;
-        border: none !important;
-        background: transparent !important;
-        appearance: none;
-        -webkit-appearance: none;
+        display: none !important;
     }
 
     .cue-detail {
-        color: #222 !important;
+        display: none !important;
+    }
+    
+    .print-cue-text {
+        display: block !important;
         font-size: 14pt;
+        color: #222 !important;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        word-break: break-word;
         padding: 0;
-        border: none !important;
-        background: transparent !important;
+        margin: 0;
     }
 
     textarea, input, select {

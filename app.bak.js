@@ -501,6 +501,17 @@ if (btnDoSearch) btnDoSearch.addEventListener('click', async () => {
     }
 });
 
+function escapeHTML(str) {
+    if (!str) return '';
+    return str.toString().replace(/[&<>'"]/g, tag => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        "'": '&#39;',
+        '"': '&quot;'
+    }[tag] || tag));
+}
+
 async function openPreviewModal(id, title) {
     previewTitle.innerText = title || 'Preview';
     previewBody.innerHTML = '<div style="text-align:center;">Loading...</div>';
@@ -527,7 +538,7 @@ async function openPreviewModal(id, title) {
                     
                     b.innerHTML = `
                         ${cueHtml}
-                        <div style="font-family: var(--font-thai);">${row.rightColumn.text}</div>
+                        <div style="font-family: var(--font-thai);">${escapeHTML(row.rightColumn.text)}</div>
                     `;
                     previewBody.appendChild(b);
                 });
@@ -602,7 +613,8 @@ async function saveStory(isAutoSave = false) {
     const payload = {
         id: currentStoryId,
         metadata: metaData,
-        content: rowData
+        content: rowData,
+        csrf_token: window.currentUser ? window.currentUser.csrfToken : ''
     };
 
     try {
