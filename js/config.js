@@ -44,5 +44,8 @@ export const State = {
     acCursorPos: -1,
     acSelectedIndex: 0,
     storyKeywords: '',
-    initialStatus: null
+    initialStatus: null,
+    isReadOnly: false,
+    lockInterval: null,
+    isSaving: false
 };

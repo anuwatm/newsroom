@@ -40,3 +40,31 @@ export async function moveToBin(id) {
     });
     return res.json();
 }
+
+export async function lockStory(id) {
+    const csrfToken = window.currentUser ? window.currentUser.csrfToken : '';
+    const res = await fetch('api.php?action=lock_story', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, csrf_token: csrfToken })
+    });
+    return res.json();
+}
+
+export async function unlockStory(id) {
+    const csrfToken = window.currentUser ? window.currentUser.csrfToken : '';
+    const data = JSON.stringify({ id, csrf_token: csrfToken });
+    if (navigator.sendBeacon) {
+        navigator.sendBeacon('api.php?action=unlock_story', new Blob([data], { type: 'application/json' }));
+        return { success: true };
+    } else {
+        const res = await fetch('api.php?action=unlock_story', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: data,
+            keepalive: true
+        });
+        return res.json();
+    }
+}
+

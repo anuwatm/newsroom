@@ -26,6 +26,12 @@ try {
 try {
     $db->exec("ALTER TABLE stories ADD COLUMN is_deleted INTEGER DEFAULT 0");
 } catch (Exception $e) { /* Column already exists */ }
+try {
+    $db->exec("ALTER TABLE stories ADD COLUMN locked_by TEXT");
+} catch (Exception $e) { /* Column already exists */ }
+try {
+    $db->exec("ALTER TABLE stories ADD COLUMN locked_at DATETIME");
+} catch (Exception $e) { /* Column already exists */ }
 
 session_start();
 if (!isset($_SESSION['user'])) {
@@ -97,6 +103,23 @@ if ($method === 'POST' && $action === 'save_story') {
         }
 
         if ($storyId) {
+            // Verify Lock
+            $stmtLock = $db->prepare("SELECT locked_by, locked_at FROM stories WHERE id=?");
+            $stmtLock->execute([$storyId]);
+            $lockStatus = $stmtLock->fetch(PDO::FETCH_ASSOC);
+            if ($lockStatus) {
+                $locked_by = $lockStatus['locked_by'];
+                $locked_at = $lockStatus['locked_at'];
+                $fallbackId = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
+                if (!empty($locked_by) && $locked_by !== $fallbackId) {
+                    if (!empty($locked_at) && (time() - strtotime($locked_at)) < 300) {
+                        $db->rollBack();
+                        echo json_encode(['success' => false, 'error' => "Story is currently locked by {$locked_by}. Please wait or try again later."]);
+                        exit;
+                    }
+                }
+            }
+
             // Update existing story
             $stmt = $db->prepare("SELECT current_version FROM stories WHERE id=?");
             $stmt->execute([$storyId]);
@@ -106,8 +129,8 @@ if ($method === 'POST' && $action === 'save_story') {
             // หากเป็น Auto-save ให้ใช้เวอร์ชันเก่าเซฟทับ หากผู้ใช้กด Save ให้ขึ้นเวอร์ชันใหม่
             $newVersion = ($is_autosave && $currentVersion > 0) ? $currentVersion : $currentVersion + 1;
 
-            $stmt = $db->prepare("UPDATE stories SET slug=?, format=?, reporter=?, anchor=?, department_id=?, status=?, estimated_time=?, current_version=?, keywords=?, keyword_soundex=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
-            $stmt->execute([$meta['slug'], $meta['format'], $meta['reporter'], $meta['anchor'], $meta['department'], $meta['status'], $meta['estimated_time'], $newVersion, $keywords, $soundexStr, $storyId]);
+            $stmt = $db->prepare("UPDATE stories SET slug=?, format=?, reporter=?, anchor=?, department_id=?, status=?, estimated_time=?, current_version=?, keywords=?, keyword_soundex=?, locked_by=?, locked_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?");
+            $stmt->execute([$meta['slug'], $meta['format'], $meta['reporter'], $meta['anchor'], $meta['department'], $meta['status'], $meta['estimated_time'], $newVersion, $keywords, $soundexStr, ($user['employee_id'] ?? $user['id'] ?? $user['full_name']), $storyId]);
         } else {
             // Insert new story
             $stmt = $db->prepare("INSERT INTO stories (slug, format, reporter, anchor, department_id, status, estimated_time, current_version, keywords, keyword_soundex) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)");
@@ -127,6 +150,78 @@ if ($method === 'POST' && $action === 'save_story') {
         $db->rollBack();
         echo json_encode(['success' => false, 'error' => $e->getMessage()]);
     }
+
+} elseif ($method === 'POST' && $action === 'lock_story') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']);
+        exit;
+    }
+    
+    $storyId = $data['id'] ?? null;
+    $user = $_SESSION['user'];
+    $empId = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
+    
+    if (!$storyId) {
+        echo json_encode(['success' => false, 'error' => 'Missing story ID']);
+        exit;
+    }
+
+    // Check current lock status
+    $stmt = $db->prepare("SELECT department_id, locked_by, locked_at FROM stories WHERE id=?");
+    $stmt->execute([$storyId]);
+    $story = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($story) {
+        // Permissions validation
+        $target_dept = $story['department_id'];
+        $role_id = $user['role_id'];
+        $user_dept = $user['department_id'];
+        if (($role_id == 1 || $role_id == 2) && $target_dept != $user_dept) {
+            echo json_encode(['success' => false, 'locked' => true, 'locked_by' => 'Permission Denied']);
+            exit;
+        }
+
+        $locked_by = $story['locked_by'];
+        $locked_at = $story['locked_at'];
+        
+        $is_locked_by_other = false;
+        if (!empty($locked_by) && $locked_by !== $empId) {
+            if (!empty($locked_at) && (time() - strtotime($locked_at)) < 300) { // 5 minutes lock duration
+                $is_locked_by_other = true;
+            }
+        }
+
+        if ($is_locked_by_other) {
+            echo json_encode(['success' => false, 'locked' => true, 'locked_by' => $locked_by]);
+            exit;
+        }
+
+        // Apply lock
+        $stmt = $db->prepare("UPDATE stories SET locked_by=?, locked_at=CURRENT_TIMESTAMP WHERE id=?");
+        $stmt->execute([$empId, $storyId]);
+        echo json_encode(['success' => true, 'locked' => false]);
+    } else {
+        echo json_encode(['success' => false, 'error' => 'Story not found']);
+    }
+
+} elseif ($method === 'POST' && $action === 'unlock_story') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']);
+        exit;
+    }
+    
+    $storyId = $data['id'] ?? null;
+    $user = $_SESSION['user'];
+    $empId = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
+    
+    if ($storyId) {
+        // Unlock only if currently locked by this user
+        $stmt = $db->prepare("UPDATE stories SET locked_by=NULL, locked_at=NULL WHERE id=? AND locked_by=?");
+        $stmt->execute([$storyId, $empId]);
+    }
+    echo json_encode(['success' => true]);
 
 } elseif ($method === 'GET' && $action === 'get_story') {
     $storyId = $_GET['id'] ?? null;
@@ -179,10 +274,23 @@ if ($method === 'POST' && $action === 'save_story') {
         }, $rows);
     }
 
+    $is_locked_by_other = false;
+    $locked_by = $story['locked_by'];
+    $locked_at = $story['locked_at'];
+    $fallbackId = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
+
+    if (!empty($locked_by) && $locked_by !== $fallbackId) {
+        if (!empty($locked_at) && (time() - strtotime($locked_at)) < 300) {
+            $is_locked_by_other = true;
+        }
+    }
+
     echo json_encode([
         'success' => true,
         'data' => [
             'id' => $story['id'],
+            'is_locked' => $is_locked_by_other,
+            'locked_by' => $is_locked_by_other ? $locked_by : null,
             'metadata' => [
                 'slug' => $story['slug'],
                 'format' => $story['format'],
