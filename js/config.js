@@ -1,4 +1,4 @@
-export const WPM_RATE = 3;
+export const WPM_RATE = 3; // Words-per-second (WPS), not WPM. 3 WPS = 180 words per minute.
 
 export const Elements = {
     scriptBody: document.getElementById('script-body'),
@@ -10,6 +10,7 @@ export const Elements = {
     metaDepartment: document.getElementById('meta-department'),
     metaReporter: document.getElementById('meta-reporter'),
     metaStatus: document.getElementById('meta-status'),
+    metaAnchor: document.getElementById('meta-anchor'),
     totalTimeDisplay: document.getElementById('total-time'),
     sidebar: document.getElementById('archive-sidebar'),
     btnArchive: document.getElementById('btn-archive') || document.getElementById('nav-find-story'),
@@ -26,6 +27,12 @@ export const Elements = {
     previewBody: document.getElementById('preview-body'),
     cmdMenu: document.getElementById('cmd-autocomplete'),
     newBtnEl: document.getElementById('btn-new') || document.getElementById('nav-new-story'),
+    navMyStory: document.getElementById('nav-my-story'),
+    mystorySidebar: document.getElementById('mystory-sidebar'),
+    btnCloseMystory: document.getElementById('btn-close-mystory'),
+    tabMyStory: document.getElementById('tab-my-story'),
+    tabMyBin: document.getElementById('tab-my-bin'),
+    mystoryResults: document.getElementById('mystory-results'),
 };
 
 export const State = {
@@ -35,5 +42,7 @@ export const State = {
     autoSaveInterval: null,
     acTarget: null,
     acCursorPos: -1,
-    acSelectedIndex: 0
+    acSelectedIndex: 0,
+    storyKeywords: '',
+    initialStatus: null
 };

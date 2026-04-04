@@ -23,6 +23,9 @@ try {
 try {
     $db->exec("ALTER TABLE stories ADD COLUMN keyword_soundex TEXT");
 } catch (Exception $e) { /* Column already exists */ }
+try {
+    $db->exec("ALTER TABLE stories ADD COLUMN is_deleted INTEGER DEFAULT 0");
+} catch (Exception $e) { /* Column already exists */ }
 
 session_start();
 if (!isset($_SESSION['user'])) {
@@ -60,6 +63,7 @@ if ($method === 'POST' && $action === 'save_story') {
         // 1. Permission Check: Can edit this department?
         if ($role_id == 1 || $role_id == 2) { // 1: Reporter, 2: Editor
             if ($target_dept != $user_dept) {
+                $db->rollBack();
                 echo json_encode(['success' => false, 'error' => 'Permission Denied: You can only create/edit stories in your own department.']);
                 exit;
             }
@@ -68,6 +72,7 @@ if ($method === 'POST' && $action === 'save_story') {
         // 2. Permission Check: Can approve?
         if ($meta['status'] === 'APPROVED') {
             if ($role_id == 1 || $role_id == 4) { // 1: Reporter, 4: Rewriter
+                $db->rollBack();
                 echo json_encode(['success' => false, 'error' => 'Permission Denied: You do not have permission to approve stories.']);
                 exit;
             }
@@ -139,6 +144,15 @@ if ($method === 'POST' && $action === 'save_story') {
         exit;
     }
 
+    $user = $_SESSION['user'];
+    $role_id = $user['role_id'];
+    $user_dept = $user['department_id'];
+
+    if (($role_id == 1 || $role_id == 2) && $story['department_id'] != $user_dept) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied: You cannot read stories from other departments.']);
+        exit;
+    }
+
     $content = [];
     $version = $story['current_version'] ?? 0;
     
@@ -196,8 +210,16 @@ if ($method === 'POST' && $action === 'save_story') {
     $query = "SELECT DISTINCT s.id, s.slug, s.updated_at, d.name as department_name, s.status 
               FROM stories s
               LEFT JOIN departments d ON s.department_id = d.id
-              WHERE 1=1";
+              WHERE s.is_deleted = 0";
     $params = [];
+
+    $user = $_SESSION['user'];
+    $role_id = $user['role_id'];
+    $user_dept = $user['department_id'];
+
+    if ($role_id == 1 || $role_id == 2) {
+        $dept_id = $user_dept; // Force scope to user's assigned department
+    }
 
     if ($dept_id !== '') {
         $query .= " AND s.department_id = ?";
@@ -230,17 +252,41 @@ if ($method === 'POST' && $action === 'save_story') {
     $stmt = $db->prepare($query);
     $stmt->execute($params);
     echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+} elseif ($method === 'GET' && $action === 'get_my_stories') {
+    $is_bin = isset($_GET['is_bin']) && $_GET['is_bin'] == '1' ? 1 : 0;
+    $user = $_SESSION['user'];
+    
+    $query = "SELECT s.id, s.slug, s.updated_at, d.name as department_name, s.status 
+              FROM stories s
+              LEFT JOIN departments d ON s.department_id = d.id
+              WHERE s.reporter = ? AND s.is_deleted = ?
+              ORDER BY s.updated_at DESC LIMIT 100";
+    $stmt = $db->prepare($query);
+    $stmt->execute([$user['full_name'], $is_bin]);
+    
+    echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+} elseif ($method === 'POST' && $action === 'move_to_bin') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $storyId = $data['id'] ?? null;
+    $user = $_SESSION['user'];
+    
+    if (!$storyId) {
+        echo json_encode(['success' => false, 'error' => 'Missing story ID']);
+        exit;
+    }
+    
+    $stmt = $db->prepare("UPDATE stories SET is_deleted = 1 WHERE id = ? AND reporter = ? AND status = 'DRAFT'");
+    $stmt->execute([$storyId, $user['full_name']]);
+    
+    if ($stmt->rowCount() > 0) {
+        echo json_encode(['success' => true]);
+    } else {
+        echo json_encode(['success' => false, 'error' => 'Could not delete story. It may not belong to you or is not a DRAFT.']);
+    }
 } else {
     echo json_encode(['success' => false, 'error' => 'Invalid Action']);
 }
 
-function check_right_col($row, $key, $default)
-{
-    if (isset($row['rightColumn']) && isset($row['rightColumn'][$key])) {
-        return $row['rightColumn'][$key];
-    }
-    return $default;
-}
 
 function thai_soundex($text) {
     if (empty($text)) return '';
@@ -266,5 +312,5 @@ function thai_soundex($text) {
     $result = preg_replace('/(.)\1+/', '$1', $result);
     if (empty($result)) return '';
     // Maximum 6 chars for soundex depth limit to prevent over-matching
-    return mb_substr($result, 0, 8, 'UTF-8');
+    return mb_substr($result, 0, 6, 'UTF-8');
 }

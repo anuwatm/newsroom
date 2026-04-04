@@ -18,7 +18,7 @@ $csrf_token = $_SESSION['csrf_token'];
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>News Room</title>
-    <link rel="stylesheet" href="style.css?v=<?php echo time(); ?>">
+    <link rel="stylesheet" href="style.css?v=3">
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -43,6 +43,7 @@ $csrf_token = $_SESSION['csrf_token'];
                     <div class="dropdown-menu">
                         <a href="#" id="nav-new-story">New Story</a>
                         <a href="#" id="nav-find-story">Find Story</a>
+                        <a href="#" id="nav-my-story">My Story</a>
                     </div>
                 </div>
                 <div class="nav-item"><a href="#" class="nav-link">Rundown</a></div>
@@ -171,6 +172,21 @@ $csrf_token = $_SESSION['csrf_token'];
         </div>
     </div>
 
+    <!-- My Story Sidebar -->
+    <div id="mystory-sidebar" class="archive-sidebar mystory-sidebar">
+        <div class="archive-header">
+            <h2>My Story</h2>
+            <button id="btn-close-mystory" class="btn" style="background:transparent; color:#fff; font-size:24px; border:none; padding:0;">&times;</button>
+        </div>
+        <div class="archive-tabs">
+            <button id="tab-my-story" class="tab-btn active">My Story</button>
+            <button id="tab-my-bin" class="tab-btn">My Bin</button>
+        </div>
+        <div id="mystory-results" class="archive-results">
+            <div style="text-align:center; color: var(--text-secondary); margin-top: 20px;">Loading...</div>
+        </div>
+    </div>
+
     <!-- Preview Window -->
     <div id="preview-modal" class="floating-window">
         <div class="modal-header" id="preview-header" title="Drag to move">
@@ -212,14 +228,14 @@ $csrf_token = $_SESSION['csrf_token'];
 
     <script>
         window.currentUser = {
-            fullName: <?php echo json_encode($user['full_name']); ?>,
-            roleId: <?php echo json_encode($user['role_id']); ?>,
-            roleName: <?php echo json_encode($user['role_name']); ?>,
-            departmentId: <?php echo json_encode($user['department_id']); ?>,
-            departmentName: <?php echo json_encode($user['department_name']); ?>,
-            csrfToken: <?php echo json_encode($csrf_token); ?>
+            fullName: <?php echo json_encode($user['full_name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>,
+            roleId: <?php echo json_encode($user['role_id'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>,
+            roleName: <?php echo json_encode($user['role_name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>,
+            departmentId: <?php echo json_encode($user['department_id'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>,
+            departmentName: <?php echo json_encode($user['department_name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>,
+            csrfToken: <?php echo json_encode($csrf_token, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>
         };
     </script>
-    <script type="module" src="js/main.js?v=<?php echo time(); ?>"></script>
+    <script type="module" src="js/main.js?v=3"></script>
 </body>
 </html>

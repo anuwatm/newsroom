@@ -92,17 +92,19 @@ try {
     if ($stmt->fetchColumn() == 0) {
         $hashed = password_hash('1234', PASSWORD_BCRYPT);
 
+        $stmt_ins = $db->prepare("INSERT INTO users (employee_id, full_name, password, role_id, department_id) VALUES (?, ?, ?, ?, ?)");
+        
         // 1. admin (บกกลาง / การเมือง)
-        $db->exec("INSERT INTO users (employee_id, full_name, password, role_id, department_id) VALUES ('admin', 'Admin (บกกลาง)', '$hashed', 3, 1)");
+        $stmt_ins->execute(['admin', 'Admin (บกกลาง)', $hashed, 3, 1]);
 
         // 2. editor1 (บก / สังคม)
-        $db->exec("INSERT INTO users (employee_id, full_name, password, role_id, department_id) VALUES ('editor1', 'Editor 1 (บก)', '$hashed', 2, 2)");
+        $stmt_ins->execute(['editor1', 'Editor 1 (บก)', $hashed, 2, 2]);
 
         // 3. reporter1 (นักข่าว / สังคม)
-        $db->exec("INSERT INTO users (employee_id, full_name, password, role_id, department_id) VALUES ('reporter1', 'Reporter 1 (นักข่าว)', '$hashed', 1, 2)");
+        $stmt_ins->execute(['reporter1', 'Reporter 1 (นักข่าว)', $hashed, 1, 2]);
 
         // 4. rewrite1 (rewriter / กีฬา)
-        $db->exec("INSERT INTO users (employee_id, full_name, password, role_id, department_id) VALUES ('rewrite1', 'Rewriter 1', '$hashed', 4, 4)");
+        $stmt_ins->execute(['rewrite1', 'Rewriter 1', $hashed, 4, 4]);
     }
 
 } catch (PDOException $e) {

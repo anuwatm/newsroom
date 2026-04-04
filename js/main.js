@@ -1,10 +1,10 @@
-import { Elements, State } from './config.js?v=2';
-import { getDepartments, getUsers, getStory, saveStoryData } from './api.js?v=2';
-import { updateCalculations, addNewRow } from './editor.js?v=2';
-import { initAutocomplete } from './autocomplete.js?v=2';
-import { initArchiveUI } from './archive.js?v=2';
-import { setupPrint } from './print.js?v=2';
-import { setupPrint } from './print.js?v=2';
+import { Elements, State } from './config.js?v=3';
+import { getDepartments, getUsers, getStory, saveStoryData } from './api.js?v=3';
+import { updateCalculations, addNewRow } from './editor.js?v=3';
+import { initAutocomplete } from './autocomplete.js?v=3';
+import { initArchiveUI } from './archive.js?v=3';
+import { setupPrint } from './print.js?v=3';
+import { initMyStoryUI } from './mystory.js?v=3';
 
 const STOP_WORDS = new Set([
     'การ', 'ความ', 'ไป', 'มา', 'ที่', 'ซึ่ง', 'อัน', 'และ', 'หรือ', 'ของ', 'เป็น', 'ว่า', 'จะ', 'ให้', 'ได้', 'ก็', 'ใน', 'ด้วย', 'ผู้', 'มี', 'ไม่', 'จาก', 'แล้ว', 'กับ', 'นี้', 'นั้น', 'ทำ', 'วัน', 'รับ', 'ถึง', 'เพื่อ', 'โดย', 'ตาม'
@@ -54,6 +54,7 @@ async function loadStory(id) {
             if (Elements.metaDepartment) Elements.metaDepartment.value = meta.department || '';
             if (Elements.metaReporter) Elements.metaReporter.value = meta.reporter || '';
             if (Elements.metaStatus) Elements.metaStatus.value = meta.status || 'DRAFT';
+            if (Elements.metaAnchor) Elements.metaAnchor.value = meta.anchor || '';
             State.storyKeywords = meta.keywords || '';
 
             const rId = window.currentUser ? window.currentUser.roleId : null;
@@ -111,6 +112,7 @@ async function saveStory(isAutoSave = false) {
     // Intercept manual save if status changed to popup keyword validation
     if (!isAutoSave && State.initialStatus && currentStatus !== State.initialStatus) {
         const suggestedWords = extractKeywords(extractedAnchorText);
+        const prefillKeywords = State.storyKeywords ? State.storyKeywords : suggestedWords.join(', ');
         
         const { value: keywords, isConfirmed } = await Swal.fire({
             title: "โปรดตรวจสอบ Keyword สำคัญ",
@@ -119,7 +121,7 @@ async function saveStory(isAutoSave = false) {
                 คุณกำลังเปลี่ยนสถานะข่าวเป็น <b>${currentStatus}</b><br>
                 ระบบได้สกัดคำสำคัญออกมา ให้คุณสามารถตรวจสอบแก้ไขได้ก่อนส่งงาน
               </p>
-              <input id="swal-input-keywords" class="swal2-input" value="${suggestedWords.join(', ')}" style="font-family: 'Sarabun', sans-serif;">
+              <input id="swal-input-keywords" class="swal2-input" value="${prefillKeywords}" style="font-family: 'Sarabun', sans-serif;">
             `,
             showCancelButton: true,
             confirmButtonText: 'Confirm & Save',
@@ -182,16 +184,24 @@ async function saveStory(isAutoSave = false) {
             return true;
         } else {
             console.error('Save failed: ' + result.error);
-            if (!isAutoSave) alert('Save failed: ' + result.error);
-            Elements.btnSave.innerText = 'SAVE STORY';
-            Elements.btnSave.disabled = false;
+            if (!isAutoSave) {
+                alert('Save failed: ' + result.error);
+            }
+            if (Elements.btnSave) {
+                Elements.btnSave.innerText = 'SAVE STORY';
+                Elements.btnSave.disabled = false;
+            }
             return false;
         }
     } catch (e) {
         console.error(e);
-        if (!isAutoSave) alert('Exception during save');
-        Elements.btnSave.innerText = 'SAVE STORY';
-        Elements.btnSave.disabled = false;
+        if (!isAutoSave) {
+            alert('Exception during save');
+        }
+        if (Elements.btnSave) {
+            Elements.btnSave.innerText = 'SAVE STORY';
+            Elements.btnSave.disabled = false;
+        }
         return false;
     }
 }
@@ -207,6 +217,7 @@ function startAutoSave() {
 document.addEventListener('DOMContentLoaded', async () => {
     initAutocomplete(updateCalculations);
     initArchiveUI();
+    initMyStoryUI();
     setupPrint(saveStory);
 
     if (Elements.btnAddRow) Elements.btnAddRow.addEventListener('click', () => addNewRow());

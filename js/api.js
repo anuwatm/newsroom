@@ -26,3 +26,17 @@ export async function saveStoryData(payload) {
     });
     return res.json();
 }
+
+export async function getMyStories(isBin) {
+    const res = await fetch(`api.php?action=get_my_stories&is_bin=${isBin}`);
+    return res.json();
+}
+
+export async function moveToBin(id) {
+    const res = await fetch('api.php?action=move_to_bin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+    });
+    return res.json();
+}

@@ -1,6 +1,6 @@
-import { Elements, WPM_RATE } from './config.js';
-import { countWords, formatTime } from './utils.js';
-import { setupAutocompleteEditor } from './autocomplete.js';
+import { Elements, WPM_RATE } from './config.js?v=3';
+import { countWords, formatTime } from './utils.js?v=3';
+import { setupAutocompleteEditor } from './autocomplete.js?v=3';
 
 export function updateCalculations() {
     let totalEstimatedSeconds = 0;

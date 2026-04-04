@@ -1,6 +1,6 @@
-import { Elements, State } from './config.js';
-import { getStory, searchStories } from './api.js';
-import { escapeHTML } from './utils.js';
+import { Elements, State } from './config.js?v=3';
+import { getStory, searchStories } from './api.js?v=3';
+import { escapeHTML } from './utils.js?v=3';
 
 export const closeModal = () => { if (Elements.modal) Elements.modal.classList.remove('open'); };
 
@@ -31,7 +31,7 @@ export async function openPreviewModal(id, title) {
                     if (row.leftColumn && row.leftColumn.cues) {
                         row.leftColumn.cues.forEach(c => {
                             const cueText = c.value || c.detail || '';
-                            cueHtml += `<div class="preview-cue">[${c.type}] ${cueText}</div>`;
+                            cueHtml += `<div class="preview-cue">[${escapeHTML(c.type)}] ${escapeHTML(cueText)}</div>`;
                         });
                     }
                     b.innerHTML = `
@@ -52,6 +52,7 @@ export async function openPreviewModal(id, title) {
 export function initArchiveUI() {
     if (Elements.btnArchive) Elements.btnArchive.addEventListener('click', (e) => {
         e.preventDefault();
+        if (Elements.mystorySidebar) Elements.mystorySidebar.classList.remove('open');
         Elements.sidebar.classList.add('open');
         if (window.currentUser && Elements.searchDept) {
             Elements.searchDept.value = window.currentUser.departmentId;
@@ -83,13 +84,13 @@ export function initArchiveUI() {
                         
                         item.innerHTML = `
                             <div class="archive-item-header">
-                                <div class="archive-item-title">${story.slug || 'Untitled Story'}</div>
-                                <span class="status-badge" style="background-color: ${statusColor};">${story.status}</span>
+                                <div class="archive-item-title">${escapeHTML(story.slug || 'Untitled Story')}</div>
+                                <span class="status-badge" style="background-color: ${escapeHTML(statusColor)};">${escapeHTML(story.status)}</span>
                             </div>
                             <div class="archive-item-meta">
                                 <div class="meta-row-info">
-                                    <span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg> ${story.department_name || '-'}</span>
-                                    <span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ${story.updated_at}</span>
+                                    <span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg> ${escapeHTML(story.department_name || '-')}</span>
+                                    <span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ${escapeHTML(story.updated_at)}</span>
                                 </div>
                             </div>
                         `;

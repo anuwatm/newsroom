@@ -664,6 +664,65 @@ body {
     font-weight: normal;
 }
 
+/* My Story Tabs */
+.archive-tabs {
+    display: flex;
+    background-color: var(--bg-surface-elevated);
+    border-bottom: 1px solid var(--border);
+}
+.tab-btn {
+    flex: 1;
+    padding: 12px;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+}
+.tab-btn:hover {
+    color: var(--text-primary);
+}
+.tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+/* Action Buttons */
+.action-buttons {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border);
+}
+.btn-icon {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+.btn-icon svg {
+    width: 18px;
+    height: 18px;
+}
+.btn-icon:hover {
+    color: var(--accent);
+    background: var(--accent-bg);
+}
+.btn-icon.del:hover {
+    color: var(--danger);
+    background: rgba(255, 71, 87, 0.1);
+}
+
 @media print {
     @page {
         size: A4;

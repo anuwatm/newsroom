@@ -1,4 +1,5 @@
-import { Elements } from './config.js';
+import { Elements } from './config.js?v=3';
+import { escapeHTML } from './utils.js?v=3';
 
 export function setupPrint(saveStoryCallback) {
     if (Elements.btnPrint) {
@@ -36,9 +37,9 @@ export function setupPrint(saveStoryCallback) {
                     const detailText = cueInput.value || '';
                     
                     if (detailText.trim()) {    
-                        printCueDiv.innerHTML = `<strong>[${typeText}]</strong><br/>${detailText.replace(/\n/g, '<br/>')}`;
+                        printCueDiv.innerHTML = `<strong>[${escapeHTML(typeText)}]</strong><br/>${escapeHTML(detailText).replace(/\n/g, '<br/>')}`;
                     } else {
-                        printCueDiv.innerHTML = `<strong>[${typeText}]</strong>`;
+                        printCueDiv.innerHTML = `<strong>[${escapeHTML(typeText)}]</strong>`;
                     }
                 });
             });

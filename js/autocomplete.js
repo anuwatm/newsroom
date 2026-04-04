@@ -1,4 +1,4 @@
-import { Elements, State } from './config.js';
+import { Elements, State } from './config.js?v=3';
 
 export function closeCmdMenu() {
     if (Elements.cmdMenu) Elements.cmdMenu.style.display = 'none';
@@ -75,8 +75,8 @@ export function setupAutocompleteEditor(readInput, autoResizeFn, updateCalcFn) {
         if (val.substring(pos - 1, pos) === '[') {
             const rect = readInput.getBoundingClientRect();
             Elements.cmdMenu.style.display = 'block';
-            Elements.cmdMenu.style.top = (rect.top + 30) + 'px'; 
-            Elements.cmdMenu.style.left = Math.min(rect.left + 20, window.innerWidth - 250) + 'px';
+            Elements.cmdMenu.style.top = (rect.top + window.scrollY + 30) + 'px'; 
+            Elements.cmdMenu.style.left = Math.min(rect.left + window.scrollX + 20, window.innerWidth + window.scrollX - 250) + 'px';
             State.acTarget = readInput;
             State.acCursorPos = pos;
             
@@ -124,10 +124,10 @@ export function setupAutocompleteEditor(readInput, autoResizeFn, updateCalcFn) {
             if (e.key === 'Backspace') {
                 openIdx = val.lastIndexOf('[', pos - 1);
             } else if (e.key === 'Delete') {
-                openIdx = val.lastIndexOf('[', pos);
-                if (openIdx === -1 || openIdx > pos) {
-                    openIdx = val.indexOf('[', pos);
-                    if (openIdx !== pos) openIdx = -1;
+                if (pos < val.length && val[pos] === '[') {
+                    openIdx = pos;
+                } else {
+                    openIdx = val.lastIndexOf('[', pos);
                 }
             }
 
