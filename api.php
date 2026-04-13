@@ -15,6 +15,50 @@ if (!is_dir($dataDir)) {
 
 // Ensure migrations for new columns
 try {
+    $db->exec("CREATE TABLE IF NOT EXISTS rundowns (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        broadcast_time DATETIME NOT NULL,
+        target_trt INTEGER NOT NULL DEFAULT 0,
+        is_locked INTEGER DEFAULT 0,
+        created_by TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )");
+} catch (Exception $e) {}
+
+try {
+    $db->exec("CREATE TABLE IF NOT EXISTS rundown_stories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rundown_id INTEGER NOT NULL,
+        story_id INTEGER NOT NULL,
+        order_index INTEGER NOT NULL DEFAULT 0,
+        is_dropped INTEGER DEFAULT 0,
+        FOREIGN KEY(rundown_id) REFERENCES rundowns(id) ON DELETE CASCADE,
+        FOREIGN KEY(story_id) REFERENCES stories(id) ON DELETE CASCADE
+    )");
+} catch (Exception $e) {}
+
+try {
+    $db->exec("ALTER TABLE rundown_stories ADD COLUMN is_break INTEGER DEFAULT 0");
+} catch (Exception $e) {}
+try {
+    $db->exec("ALTER TABLE rundown_stories ADD COLUMN break_duration INTEGER DEFAULT 0");
+} catch (Exception $e) {}
+
+try {
+    $db->exec("CREATE TABLE IF NOT EXISTS programs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        duration INTEGER NOT NULL DEFAULT 0,
+        break_count INTEGER NOT NULL DEFAULT 0
+    )");
+} catch (Exception $e) {}
+
+try {
+    $db->exec("ALTER TABLE rundowns ADD COLUMN program_id INTEGER");
+} catch (Exception $e) {}
+
+try {
     $db->exec("ALTER TABLE stories ADD COLUMN current_version INTEGER DEFAULT 0");
 } catch (Exception $e) { /* Column already exists */ }
 try {
@@ -59,15 +103,30 @@ if ($method === 'POST' && $action === 'save_story') {
         $db->beginTransaction();
 
         $storyId = $data['id'] ?? null;
+        if ($storyId) $storyId = intval($storyId);
         $meta = $data['metadata'];
 
         $user = $_SESSION['user'];
         $role_id = $user['role_id'];
         $user_dept = $user['department_id'];
-        $target_dept = $meta['department'];
 
-        // 1. Permission Check: Can edit this department?
-        if ($role_id == 1 || $role_id == 2) { // 1: Reporter, 2: Editor
+        // Bug 5: Target dept must be checked against existing DB value
+        $target_dept = $meta['department'];
+        if ($storyId) {
+            $stmtEx = $db->prepare("SELECT department_id FROM stories WHERE id=?");
+            $stmtEx->execute([$storyId]);
+            $existingDbStory = $stmtEx->fetch(PDO::FETCH_ASSOC);
+            if ($existingDbStory) {
+                if (($role_id == 1 || $role_id == 2) && $existingDbStory['department_id'] != $user_dept) {
+                    $db->rollBack();
+                    echo json_encode(['success' => false, 'error' => 'Permission Denied: You can only edit stories within your own department.']);
+                    exit;
+                }
+            }
+        }
+        
+        // 1. Permission Check: Can edit this department (for newly created stories, or if somehow changing dept)
+        if ($role_id == 1 || $role_id == 2) {
             if ($target_dept != $user_dept) {
                 $db->rollBack();
                 echo json_encode(['success' => false, 'error' => 'Permission Denied: You can only create/edit stories in your own department.']);
@@ -138,10 +197,12 @@ if ($method === 'POST' && $action === 'save_story') {
             $storyId = $db->lastInsertId();
         }
 
-        // Save content to a versioned text file
+        // Save content to a versioned text file (Bug 8)
         if (isset($data['content']) && is_array($data['content'])) {
             $filePath = $dataDir . '/story_' . $storyId . '_v' . $newVersion . '.json';
-            file_put_contents($filePath, json_encode($data['content'], JSON_UNESCAPED_UNICODE));
+            if (file_put_contents($filePath, json_encode($data['content'], JSON_UNESCAPED_UNICODE)) === false) {
+                throw new Exception('Failed to write story data to storage.');
+            }
         }
 
         $db->commit();
@@ -225,6 +286,8 @@ if ($method === 'POST' && $action === 'save_story') {
 
 } elseif ($method === 'GET' && $action === 'get_story') {
     $storyId = $_GET['id'] ?? null;
+    if ($storyId) $storyId = intval($storyId);
+    
     if (!$storyId) {
         echo json_encode(['success' => false, 'error' => 'No story ID provided']);
         exit;
@@ -236,6 +299,11 @@ if ($method === 'POST' && $action === 'save_story') {
 
     if (!$story) {
         echo json_encode(['success' => false, 'error' => 'Story not found']);
+        exit;
+    }
+
+    if ($story['is_deleted'] == 1) {
+        echo json_encode(['success' => false, 'error' => 'Story has been deleted']);
         exit;
     }
 
@@ -313,6 +381,7 @@ if ($method === 'POST' && $action === 'save_story') {
 } elseif ($method === 'GET' && $action === 'search_stories') {
     $dept_id = $_GET['department_id'] ?? '';
     $keyword = $_GET['keyword'] ?? '';
+    $exclude_draft = isset($_GET['exclude_draft']) && $_GET['exclude_draft'] == '1';
     $kw = "%$keyword%";
 
     $query = "SELECT DISTINCT s.id, s.slug, s.updated_at, d.name as department_name, s.status 
@@ -320,6 +389,10 @@ if ($method === 'POST' && $action === 'save_story') {
               LEFT JOIN departments d ON s.department_id = d.id
               WHERE s.is_deleted = 0";
     $params = [];
+    
+    if ($exclude_draft) {
+        $query .= " AND s.status != 'DRAFT'";
+    }
 
     $user = $_SESSION['user'];
     $role_id = $user['role_id'];
@@ -375,6 +448,11 @@ if ($method === 'POST' && $action === 'save_story') {
     echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
 } elseif ($method === 'POST' && $action === 'move_to_bin') {
     $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']);
+        exit;
+    }
+    
     $storyId = $data['id'] ?? null;
     $user = $_SESSION['user'];
     
@@ -391,6 +469,339 @@ if ($method === 'POST' && $action === 'save_story') {
     } else {
         echo json_encode(['success' => false, 'error' => 'Could not delete story. It may not belong to you or is not a DRAFT.']);
     }
+
+} elseif ($method === 'POST' && $action === 'create_rundown') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']);
+        exit;
+    }
+    
+    $user = $_SESSION['user'];
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied: Only Main Editor can create a Rundown.']);
+        exit;
+    }
+    
+    $program_id = $data['program_id'] ?? null;
+    $name = $data['name'] ?? 'New Rundown';
+    $broadcast_time = $data['broadcast_time'] ?? date('Y-m-d H:i:s');
+    $target_trt = intval($data['target_trt'] ?? 0);
+    $empId = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
+    
+    $stmt = $db->prepare("INSERT INTO rundowns (name, broadcast_time, target_trt, created_by, program_id) VALUES (?, ?, ?, ?, ?)");
+    $stmt->execute([$name, $broadcast_time, $target_trt, $empId, $program_id]);
+    $rundownId = $db->lastInsertId();
+
+    $breakCount = intval($data['break_count'] ?? 0);
+    if ($breakCount > 0) {
+        $stmtCheckBreak = $db->query("SELECT id FROM stories WHERE format='BREAK' AND slug='--- COMMERCIAL BREAK ---' LIMIT 1");
+        $breakStoryId = $stmtCheckBreak->fetchColumn();
+        if (!$breakStoryId) {
+            $db->exec("INSERT INTO stories (slug, format, estimated_time, status, is_deleted) VALUES ('--- COMMERCIAL BREAK ---', 'BREAK', 180, 'APPROVED', 1)");
+            $breakStoryId = $db->lastInsertId();
+        }
+        
+        $stmtRunStore = $db->prepare("INSERT INTO rundown_stories (rundown_id, story_id, order_index, is_break, break_duration) VALUES (?, ?, ?, 1, 180)");
+        
+        for ($i = 0; $i < $breakCount; $i++) {
+            $stmtRunStore->execute([$rundownId, $breakStoryId, $i + 1]);
+        }
+    }
+    
+    echo json_encode(['success' => true, 'id' => $rundownId]);
+
+} elseif ($method === 'GET' && $action === 'get_rundowns') {
+    $user = $_SESSION['user'];
+    if ($user['role_id'] == 1 || $user['role_id'] == 4) { // Restrict Reporters and Rewriters
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']);
+        exit;
+    }
+    $stmt = $db->query("SELECT * FROM rundowns ORDER BY broadcast_time DESC");
+    echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+
+} elseif ($method === 'GET' && $action === 'get_rundown_data') {
+    $user = $_SESSION['user'];
+    if ($user['role_id'] == 1 || $user['role_id'] == 4) { // Restrict Reporters and Rewriters
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']);
+        exit;
+    }
+    
+    $rundownId = $_GET['id'] ?? null;
+    if (!$rundownId) {
+        echo json_encode(['success' => false, 'error' => 'Missing rundown ID']);
+        exit;
+    }
+    
+    $stmt = $db->prepare("SELECT * FROM rundowns WHERE id=?");
+    $stmt->execute([$rundownId]);
+    $rundown = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$rundown) {
+        echo json_encode(['success' => false, 'error' => 'Rundown not found']);
+        exit;
+    }
+    
+    $stmtStories = $db->prepare("
+        SELECT rs.id as rundown_story_id, rs.order_index, rs.is_dropped, rs.is_break, rs.break_duration,
+               s.id, s.slug, s.format, s.reporter, s.status, 
+               CASE WHEN rs.is_break = 1 THEN rs.break_duration ELSE s.estimated_time END as estimated_time, 
+               s.updated_at, d.name as department_name
+        FROM rundown_stories rs
+        JOIN stories s ON rs.story_id = s.id
+        LEFT JOIN departments d ON s.department_id = d.id
+        WHERE rs.rundown_id = ?
+        ORDER BY rs.order_index ASC
+    ");
+    $stmtStories->execute([$rundownId]);
+    $rundown['stories'] = $stmtStories->fetchAll(PDO::FETCH_ASSOC);
+    
+    echo json_encode(['success' => true, 'data' => $rundown]);
+
+} elseif ($method === 'POST' && $action === 'add_rundown_story') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']);
+        exit;
+    }
+    
+    $rundownId = $data['rundown_id'] ?? null;
+    $storyId = $data['story_id'] ?? null;
+    $user = $_SESSION['user'];
+    
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']);
+        exit;
+    }
+    
+    if (!$rundownId || !$storyId) {
+        echo json_encode(['success' => false, 'error' => 'Missing IDs']);
+        exit;
+    }
+
+    $stmtLock = $db->prepare("SELECT is_locked FROM rundowns WHERE id=?");
+    $stmtLock->execute([$rundownId]);
+    if ($stmtLock->fetchColumn() == 1) {
+        echo json_encode(['success' => false, 'error' => 'Rundown is locked']);
+        exit;
+    }
+    
+    $stmtDup = $db->prepare("SELECT COUNT(*) FROM rundown_stories WHERE rundown_id=? AND story_id=?");
+    $stmtDup->execute([$rundownId, $storyId]);
+    if ($stmtDup->fetchColumn() > 0) {
+        echo json_encode(['success' => false, 'error' => 'Story is already in this rundown.']);
+        exit;
+    }
+    
+    // Check if story is approved
+    $stmtCheck = $db->prepare("SELECT status FROM stories WHERE id=?");
+    $stmtCheck->execute([$storyId]);
+    $story = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$story || $story['status'] !== 'APPROVED') {
+        echo json_encode(['success' => false, 'error' => 'Only APPROVED stories can be added to the rundown.']);
+        exit;
+    }
+
+    $stmtMax = $db->prepare("SELECT MAX(order_index) FROM rundown_stories WHERE rundown_id=?");
+    $stmtMax->execute([$rundownId]);
+    $maxOrder = intval($stmtMax->fetchColumn()) + 1;
+    
+    $stmt = $db->prepare("INSERT INTO rundown_stories (rundown_id, story_id, order_index) VALUES (?, ?, ?)");
+    $stmt->execute([$rundownId, $storyId, $maxOrder]);
+    
+    echo json_encode(['success' => true]);
+
+} elseif ($method === 'POST' && $action === 'add_rundown_break') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']);
+        exit;
+    }
+    
+    $rundownId = $data['rundown_id'] ?? null;
+    $duration = intval($data['duration'] ?? 180);
+    $user = $_SESSION['user'];
+    
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']);
+        exit;
+    }
+    
+    if (!$rundownId) {
+        echo json_encode(['success' => false, 'error' => 'Missing IDs']);
+        exit;
+    }
+
+    $stmtLock = $db->prepare("SELECT is_locked FROM rundowns WHERE id=?");
+    $stmtLock->execute([$rundownId]);
+    if ($stmtLock->fetchColumn() == 1) {
+        echo json_encode(['success' => false, 'error' => 'Rundown is locked']);
+        exit;
+    }
+
+    // Insert dummy record in stories marked as deleted so it won't show in search
+    $stmtCheckBreak = $db->query("SELECT id FROM stories WHERE format='BREAK' AND slug='--- COMMERCIAL BREAK ---' LIMIT 1");
+    $breakStoryId = $stmtCheckBreak->fetchColumn();
+    if (!$breakStoryId) {
+        $db->exec("INSERT INTO stories (slug, format, estimated_time, status, is_deleted) VALUES ('--- COMMERCIAL BREAK ---', 'BREAK', 180, 'APPROVED', 1)");
+        $breakStoryId = $db->lastInsertId();
+    }
+
+    $stmtMax = $db->prepare("SELECT MAX(order_index) FROM rundown_stories WHERE rundown_id=?");
+    $stmtMax->execute([$rundownId]);
+    $maxOrder = intval($stmtMax->fetchColumn()) + 1;
+    
+    $stmt = $db->prepare("INSERT INTO rundown_stories (rundown_id, story_id, order_index, is_break, break_duration) VALUES (?, ?, ?, 1, ?)");
+    $stmt->execute([$rundownId, $breakStoryId, $maxOrder, $duration]);
+    
+    echo json_encode(['success' => true]);
+
+} elseif ($method === 'POST' && $action === 'update_rundown_order') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']);
+        exit;
+    }
+    
+    $user = $_SESSION['user'];
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']);
+        exit;
+    }
+    
+    $ids = $data['ids'] ?? [];
+    $rundownId = $data['rundown_id'] ?? null;
+    
+    if (!$rundownId) {
+        echo json_encode(['success' => false, 'error' => 'Missing rundown ID']);
+        exit;
+    }
+    
+    $stmtLock = $db->prepare("SELECT is_locked FROM rundowns WHERE id=?");
+    $stmtLock->execute([$rundownId]);
+    if ($stmtLock->fetchColumn() == 1) {
+        echo json_encode(['success' => false, 'error' => 'Rundown is locked']);
+        exit;
+    }
+    
+    if (!empty($ids)) {
+        $db->beginTransaction();
+        $stmt = $db->prepare("UPDATE rundown_stories SET order_index=? WHERE id=? AND rundown_id=?");
+        foreach ($ids as $index => $rsId) {
+            $stmt->execute([$index + 1, $rsId, $rundownId]);
+        }
+        $db->commit();
+    }
+    echo json_encode(['success' => true]);
+
+} elseif ($method === 'POST' && $action === 'toggle_rundown_story_drop') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']);
+        exit;
+    }
+    
+    $user = $_SESSION['user'];
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']);
+        exit;
+    }
+    
+    $rsId = $data['id'] ?? null;
+    $isDropped = $data['is_dropped'] ?? 0;
+    
+    if ($rsId) {
+        $stmtLock = $db->prepare("SELECT r.is_locked FROM rundowns r JOIN rundown_stories rs ON r.id = rs.rundown_id WHERE rs.id=?");
+        $stmtLock->execute([$rsId]);
+        if ($stmtLock->fetchColumn() == 1) {
+            echo json_encode(['success' => false, 'error' => 'Rundown is locked']);
+            exit;
+        }
+
+        $stmt = $db->prepare("UPDATE rundown_stories SET is_dropped=? WHERE id=?");
+        $stmt->execute([$isDropped, $rsId]);
+    }
+    echo json_encode(['success' => true]);
+
+} elseif ($method === 'POST' && $action === 'toggle_lock_rundown') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']);
+        exit;
+    }
+    
+    $user = $_SESSION['user'];
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']);
+        exit;
+    }
+    
+    $rundownId = $data['id'] ?? null;
+    $isLocked = $data['is_locked'] ?? 1;
+    
+    if ($rundownId) {
+        $stmt = $db->prepare("UPDATE rundowns SET is_locked=? WHERE id=?");
+        $stmt->execute([$isLocked, $rundownId]);
+    }
+    echo json_encode(['success' => true]);
+
+} elseif ($method === 'GET' && $action === 'get_programs') {
+    $stmt = $db->query("SELECT * FROM programs ORDER BY name ASC");
+    echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+
+} elseif ($method === 'POST' && $action === 'save_program') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']);
+        exit;
+    }
+    
+    $user = $_SESSION['user'];
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']);
+        exit;
+    }
+    
+    $id = $data['id'] ?? null;
+    $name = trim($data['name'] ?? '');
+    $duration = intval($data['duration'] ?? 0);
+    $breakCount = intval($data['break_count'] ?? 0);
+    
+    if (empty($name)) {
+        echo json_encode(['success' => false, 'error' => 'Name cannot be empty']);
+        exit;
+    }
+
+    if ($id) {
+        $stmt = $db->prepare("UPDATE programs SET name=?, duration=?, break_count=? WHERE id=?");
+        $stmt->execute([$name, $duration, $breakCount, $id]);
+    } else {
+        $stmt = $db->prepare("INSERT INTO programs (name, duration, break_count) VALUES (?, ?, ?)");
+        $stmt->execute([$name, $duration, $breakCount]);
+    }
+    echo json_encode(['success' => true]);
+
+} elseif ($method === 'POST' && $action === 'delete_program') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']);
+        exit;
+    }
+    
+    $user = $_SESSION['user'];
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']);
+        exit;
+    }
+    
+    $id = $data['id'] ?? null;
+    if ($id) {
+        $stmt = $db->prepare("DELETE FROM programs WHERE id=?");
+        $stmt->execute([$id]);
+    }
+    echo json_encode(['success' => true]);
+
 } else {
     echo json_encode(['success' => false, 'error' => 'Invalid Action']);
 }

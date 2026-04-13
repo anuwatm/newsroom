@@ -33,10 +33,11 @@ export async function getMyStories(isBin) {
 }
 
 export async function moveToBin(id) {
+    const csrfToken = window.currentUser ? window.currentUser.csrfToken : '';
     const res = await fetch('api.php?action=move_to_bin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id })
+        body: JSON.stringify({ id, csrf_token: csrfToken })
     });
     return res.json();
 }

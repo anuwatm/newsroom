@@ -5,6 +5,7 @@ import { initAutocomplete } from './autocomplete.js?v=3';
 import { initArchiveUI } from './archive.js?v=3';
 import { setupPrint } from './print.js?v=3';
 import { initMyStoryUI } from './mystory.js?v=3';
+import { escapeHTML } from './utils.js?v=3';
 
 const STOP_WORDS = new Set([
     'การ', 'ความ', 'ไป', 'มา', 'ที่', 'ซึ่ง', 'อัน', 'และ', 'หรือ', 'ของ', 'เป็น', 'ว่า', 'จะ', 'ให้', 'ได้', 'ก็', 'ใน', 'ด้วย', 'ผู้', 'มี', 'ไม่', 'จาก', 'แล้ว', 'กับ', 'นี้', 'นั้น', 'ทำ', 'วัน', 'รับ', 'ถึง', 'เพื่อ', 'โดย', 'ตาม'
@@ -57,9 +58,13 @@ async function loadStory(id) {
                     text: `ข่าวนี้กำลังถูกแก้ไขโดย: ${result.data.locked_by} คุณสามารถดูได้อย่างเดียว (Read Only)`,
                     confirmButtonText: 'รับทราบ'
                 });
-                Elements.btnSave.innerText = `LOCKED BY ${result.data.locked_by}`;
-                Elements.btnSave.disabled = true;
-                Elements.btnAddRow.style.display = 'none';
+                if (Elements.btnSave) {
+                    Elements.btnSave.innerText = `LOCKED BY ${result.data.locked_by}`;
+                    Elements.btnSave.disabled = true;
+                }
+                if (Elements.btnAddRow) {
+                    Elements.btnAddRow.style.display = 'none';
+                }
                 if (Elements.metaStatus) Elements.metaStatus.disabled = true;
                 State.isReadOnly = true;
             } else {
@@ -76,9 +81,13 @@ async function loadStory(id) {
                         confirmButtonText: 'รับทราบ'
                     });
                     State.isReadOnly = true;
-                    Elements.btnSave.innerText = lockResult.locked ? `LOCKED BY ${lockResult.locked_by}` : `READ ONLY`;
-                    Elements.btnSave.disabled = true;
-                    Elements.btnAddRow.style.display = 'none';
+                    if (Elements.btnSave) {
+                        Elements.btnSave.innerText = lockResult.locked ? `LOCKED BY ${lockResult.locked_by}` : `READ ONLY`;
+                        Elements.btnSave.disabled = true;
+                    }
+                    if (Elements.btnAddRow) {
+                        Elements.btnAddRow.style.display = 'none';
+                    }
                     if (Elements.metaStatus) Elements.metaStatus.disabled = true;
                 }
             }
@@ -93,9 +102,13 @@ async function loadStory(id) {
             const rId = window.currentUser ? window.currentUser.roleId : null;
             if (rId == 1 || rId == 2) {
                 if (Elements.metaDepartment.value != window.currentUser.departmentId) {
-                    Elements.btnSave.innerText = 'READ ONLY';
-                    Elements.btnSave.disabled = true;
-                    Elements.btnAddRow.style.display = 'none';
+                    if (Elements.btnSave) {
+                        Elements.btnSave.innerText = 'READ ONLY';
+                        Elements.btnSave.disabled = true;
+                    }
+                    if (Elements.btnAddRow) {
+                        Elements.btnAddRow.style.display = 'none';
+                    }
                     if (Elements.metaStatus) Elements.metaStatus.disabled = true;
                 }
             }
@@ -158,7 +171,7 @@ async function saveStory(isAutoSave = false) {
                     คุณกำลังเปลี่ยนสถานะข่าวเป็น <b>${currentStatus}</b><br>
                     ระบบได้สกัดคำสำคัญออกมา ให้คุณสามารถตรวจสอบแก้ไขได้ก่อนส่งงาน
                   </p>
-                  <input id="swal-input-keywords" class="swal2-input" value="${prefillKeywords}" style="font-family: 'Sarabun', sans-serif;">
+                  <input id="swal-input-keywords" class="swal2-input" value="${escapeHTML(prefillKeywords)}" style="font-family: 'Sarabun', sans-serif;">
                 `,
                 showCancelButton: true,
                 confirmButtonText: 'Confirm & Save',
@@ -323,11 +336,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const urlParams = new URLSearchParams(window.location.search);
     const id = urlParams.get('id');
+    const autoPrint = urlParams.get('print');
 
     if (id) {
         await loadStory(id);
         State.initialStatus = Elements.metaStatus ? Elements.metaStatus.value : 'DRAFT';
         // preload existing keywords via GET if available, handled in loadStory if added later
+        
+        if (autoPrint === '1') {
+            setTimeout(() => {
+                if (window.Elements && window.Elements.btnPrint) {
+                    window.Elements.btnPrint.click();
+                } else {
+                    const pb = document.getElementById('btn-print');
+                    if (pb) pb.click();
+                }
+            }, 700);
+        }
     } else {
         if (window.currentUser) {
             if (Elements.metaDepartment) Elements.metaDepartment.value = window.currentUser.departmentId || '';

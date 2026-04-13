@@ -98,7 +98,7 @@ export function initArchiveUI() {
                         Elements.archiveResults.appendChild(item);
                     });
                 } else {
-                    Elements.archiveResults.innerHTML = `<div style="color:var(--danger); text-align:center;">${result.error}</div>`;
+                    Elements.archiveResults.innerHTML = `<div style="color:var(--danger); text-align:center;">${escapeHTML(result.error)}</div>`;
                 }
             } catch(e) {
                 Elements.archiveResults.innerHTML = `<div style="color:var(--danger); text-align:center;">เกิดข้อผิดพลาดในการเชื่อมต่อ</div>`;

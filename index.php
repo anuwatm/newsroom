@@ -46,9 +46,15 @@ $csrf_token = $_SESSION['csrf_token'];
                         <a href="#" id="nav-my-story">My Story</a>
                     </div>
                 </div>
-                <div class="nav-item"><a href="#" class="nav-link">Rundown</a></div>
+                <div class="nav-item"><a href="rundown.php" class="nav-link">Rundown</a></div>
                 <div class="nav-item"><a href="#" class="nav-link">Assignment</a></div>
-                <div class="nav-item"><a href="#" class="nav-link">Admin</a></div>
+                <div class="nav-item dropdown">
+                    <span class="nav-link">Admin ▾</span>
+                    <div class="dropdown-menu">
+                        <a href="admin.php">Program Data</a>
+                        <a href="#">User Management</a>
+                    </div>
+                </div>
             </nav>
         </div>
         <div class="user-info-bar">
