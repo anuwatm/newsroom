@@ -34,43 +34,7 @@ $csrf_token = $_SESSION['csrf_token'];
     </div>
 
     <!-- App Header -->
-    <div class="app-header">
-        <div class="header-left">
-            <div class="app-title">News Room</div>
-            <nav class="top-nav">
-                <div class="nav-item dropdown">
-                    <span class="nav-link">Story ▾</span>
-                    <div class="dropdown-menu">
-                        <a href="#" id="nav-new-story">New Story</a>
-                        <a href="#" id="nav-find-story">Find Story</a>
-                        <a href="#" id="nav-my-story">My Story</a>
-                    </div>
-                </div>
-                <div class="nav-item"><a href="rundown.php" class="nav-link">Rundown</a></div>
-                <div class="nav-item"><a href="#" class="nav-link">Assignment</a></div>
-                <div class="nav-item dropdown">
-                    <span class="nav-link">Admin ▾</span>
-                    <div class="dropdown-menu">
-                        <a href="admin.php">Program Data</a>
-                        <a href="#">User Management</a>
-                    </div>
-                </div>
-            </nav>
-        </div>
-        <div class="user-info-bar">
-            <div class="user-avatar">
-                <?php echo mb_substr($user['full_name'], 0, 1, 'UTF-8'); ?>
-            </div>
-            <div class="user-details">
-                <div class="user-name"><?php echo htmlspecialchars($user['full_name']); ?></div>
-                <div class="user-role"><?php echo htmlspecialchars($user['department_name'] . ' • ' . $user['role_name']); ?></div>
-            </div>
-            <a href="logout.php" class="btn-logout" title="Logout">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-                Sign Out
-            </a>
-        </div>
-    </div>
+    <?php $active_menu = 'story'; require_once 'top_menu.php'; ?>
 
     <div class="top-bar">
         <div class="meta-section">

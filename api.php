@@ -77,6 +77,74 @@ try {
     $db->exec("ALTER TABLE stories ADD COLUMN locked_at DATETIME");
 } catch (Exception $e) { /* Column already exists */ }
 
+try {
+    $db->exec("ALTER TABLE stories ADD COLUMN author_id TEXT");
+    $db->exec("UPDATE stories SET author_id = reporter WHERE author_id IS NULL");
+} catch (Exception $e) { /* Column already exists */ }
+
+try {
+    $db->exec("CREATE TABLE IF NOT EXISTS assignments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        description TEXT,
+        reporter_id TEXT NOT NULL,
+        reporter_name TEXT NOT NULL,
+        department_id INTEGER NOT NULL,
+        status TEXT DEFAULT 'PENDING',
+        approved_by TEXT,
+        approved_at DATETIME,
+        rejection_note TEXT,
+        created_by TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )");
+} catch (Exception $e) {}
+
+try {
+    $db->exec("CREATE TABLE IF NOT EXISTS assignment_trips (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        assignment_id INTEGER NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
+        trip_date DATE NOT NULL,
+        start_time TIME NOT NULL,
+        end_time TIME,
+        location_name TEXT NOT NULL,
+        location_detail TEXT,
+        order_index INTEGER DEFAULT 0
+    )");
+} catch (Exception $e) {}
+
+try {
+    $db->exec("CREATE TABLE IF NOT EXISTS assignment_equipment (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        assignment_id INTEGER NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
+        equipment_name TEXT NOT NULL,
+        quantity INTEGER DEFAULT 1,
+        note TEXT
+    )");
+} catch (Exception $e) {}
+
+try {
+    $db->exec("CREATE TABLE IF NOT EXISTS equipment_master (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        category TEXT,
+        total_units INTEGER DEFAULT 1,
+        is_active INTEGER DEFAULT 1
+    )");
+    
+    // Seed equipment_master data
+    $db->exec("INSERT OR IGNORE INTO equipment_master (name, category, total_units, is_active) VALUES 
+        ('กล้องวิดีโอ ENG', 'กล้อง', 5, 1),
+        ('ช่างกล้อง ENG', 'บุคลากร', 5, 1),
+        ('ไมค์บูม', 'เสียง', 5, 1),
+        ('ไมค์คลิป', 'เสียง', 5, 1),
+        ('ขาตั้งกล้อง', 'กล้อง', 5, 1),
+        ('ไฟLED พกพา', 'ไฟ', 5, 1),
+        ('รถ ENG', 'ยานพาหนะ', 5, 1),
+        ('ล่าม/ผู้ช่วย', 'บุคลากร', 5, 1)
+    ");
+} catch (Exception $e) {}
+
 session_start();
 if (!isset($_SESSION['user'])) {
     echo json_encode(['success' => false, 'error' => 'Unauthorized. Please log in.']);
@@ -192,8 +260,9 @@ if ($method === 'POST' && $action === 'save_story') {
             $stmt->execute([$meta['slug'], $meta['format'], $meta['reporter'], $meta['anchor'], $meta['department'], $meta['status'], $meta['estimated_time'], $newVersion, $keywords, $soundexStr, ($user['employee_id'] ?? $user['id'] ?? $user['full_name']), $storyId]);
         } else {
             // Insert new story
-            $stmt = $db->prepare("INSERT INTO stories (slug, format, reporter, anchor, department_id, status, estimated_time, current_version, keywords, keyword_soundex) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)");
-            $stmt->execute([$meta['slug'], $meta['format'], $meta['reporter'], $meta['anchor'], $meta['department'], $meta['status'], $meta['estimated_time'], $keywords, $soundexStr]);
+            $authorId = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
+            $stmt = $db->prepare("INSERT INTO stories (slug, format, reporter, anchor, department_id, status, estimated_time, current_version, keywords, keyword_soundex, author_id) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)");
+            $stmt->execute([$meta['slug'], $meta['format'], $meta['reporter'], $meta['anchor'], $meta['department'], $meta['status'], $meta['estimated_time'], $keywords, $soundexStr, $authorId]);
             $storyId = $db->lastInsertId();
         }
 
@@ -376,7 +445,7 @@ if ($method === 'POST' && $action === 'save_story') {
     $stmt = $db->query("SELECT id, name FROM departments ORDER BY id ASC");
     echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
 } elseif ($method === 'GET' && $action === 'get_users') {
-    $stmt = $db->query("SELECT id, full_name as name FROM users ORDER BY full_name ASC");
+    $stmt = $db->query("SELECT employee_id as id, full_name as name FROM users ORDER BY full_name ASC");
     echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
 } elseif ($method === 'GET' && $action === 'search_stories') {
     $dept_id = $_GET['department_id'] ?? '';
@@ -436,14 +505,15 @@ if ($method === 'POST' && $action === 'save_story') {
 } elseif ($method === 'GET' && $action === 'get_my_stories') {
     $is_bin = isset($_GET['is_bin']) && $_GET['is_bin'] == '1' ? 1 : 0;
     $user = $_SESSION['user'];
+    $authorId = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
     
     $query = "SELECT s.id, s.slug, s.updated_at, d.name as department_name, s.status 
               FROM stories s
               LEFT JOIN departments d ON s.department_id = d.id
-              WHERE s.reporter = ? AND s.is_deleted = ?
+              WHERE s.author_id = ? AND s.is_deleted = ?
               ORDER BY s.updated_at DESC LIMIT 100";
     $stmt = $db->prepare($query);
-    $stmt->execute([$user['full_name'], $is_bin]);
+    $stmt->execute([$authorId, $is_bin]);
     
     echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
 } elseif ($method === 'POST' && $action === 'move_to_bin') {
@@ -455,14 +525,15 @@ if ($method === 'POST' && $action === 'save_story') {
     
     $storyId = $data['id'] ?? null;
     $user = $_SESSION['user'];
+    $authorId = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
     
     if (!$storyId) {
         echo json_encode(['success' => false, 'error' => 'Missing story ID']);
         exit;
     }
     
-    $stmt = $db->prepare("UPDATE stories SET is_deleted = 1 WHERE id = ? AND reporter = ? AND status = 'DRAFT'");
-    $stmt->execute([$storyId, $user['full_name']]);
+    $stmt = $db->prepare("UPDATE stories SET is_deleted = 1 WHERE id = ? AND author_id = ? AND status = 'DRAFT'");
+    $stmt->execute([$storyId, $authorId]);
     
     if ($stmt->rowCount() > 0) {
         echo json_encode(['success' => true]);
@@ -485,7 +556,13 @@ if ($method === 'POST' && $action === 'save_story') {
     
     $program_id = $data['program_id'] ?? null;
     $name = $data['name'] ?? 'New Rundown';
-    $broadcast_time = $data['broadcast_time'] ?? date('Y-m-d H:i:s');
+    $broadcast_time_val = trim($data['broadcast_time'] ?? '');
+    $bt_timestamp = strtotime($broadcast_time_val);
+    if (!$bt_timestamp) {
+        $broadcast_time = date('Y-m-d H:i:s');
+    } else {
+        $broadcast_time = date('Y-m-d H:i:s', $bt_timestamp);
+    }
     $target_trt = intval($data['target_trt'] ?? 0);
     $empId = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
     
@@ -495,12 +572,11 @@ if ($method === 'POST' && $action === 'save_story') {
 
     $breakCount = intval($data['break_count'] ?? 0);
     if ($breakCount > 0) {
+        $db->exec("INSERT INTO stories (slug, format, estimated_time, status, is_deleted)
+                   SELECT '--- COMMERCIAL BREAK ---', 'BREAK', 180, 'APPROVED', 1
+                   WHERE NOT EXISTS (SELECT 1 FROM stories WHERE format='BREAK' AND slug='--- COMMERCIAL BREAK ---')");
         $stmtCheckBreak = $db->query("SELECT id FROM stories WHERE format='BREAK' AND slug='--- COMMERCIAL BREAK ---' LIMIT 1");
         $breakStoryId = $stmtCheckBreak->fetchColumn();
-        if (!$breakStoryId) {
-            $db->exec("INSERT INTO stories (slug, format, estimated_time, status, is_deleted) VALUES ('--- COMMERCIAL BREAK ---', 'BREAK', 180, 'APPROVED', 1)");
-            $breakStoryId = $db->lastInsertId();
-        }
         
         $stmtRunStore = $db->prepare("INSERT INTO rundown_stories (rundown_id, story_id, order_index, is_break, break_duration) VALUES (?, ?, ?, 1, 180)");
         
@@ -641,12 +717,11 @@ if ($method === 'POST' && $action === 'save_story') {
     }
 
     // Insert dummy record in stories marked as deleted so it won't show in search
+    $db->exec("INSERT INTO stories (slug, format, estimated_time, status, is_deleted)
+               SELECT '--- COMMERCIAL BREAK ---', 'BREAK', 180, 'APPROVED', 1
+               WHERE NOT EXISTS (SELECT 1 FROM stories WHERE format='BREAK' AND slug='--- COMMERCIAL BREAK ---')");
     $stmtCheckBreak = $db->query("SELECT id FROM stories WHERE format='BREAK' AND slug='--- COMMERCIAL BREAK ---' LIMIT 1");
     $breakStoryId = $stmtCheckBreak->fetchColumn();
-    if (!$breakStoryId) {
-        $db->exec("INSERT INTO stories (slug, format, estimated_time, status, is_deleted) VALUES ('--- COMMERCIAL BREAK ---', 'BREAK', 180, 'APPROVED', 1)");
-        $breakStoryId = $db->lastInsertId();
-    }
 
     $stmtMax = $db->prepare("SELECT MAX(order_index) FROM rundown_stories WHERE rundown_id=?");
     $stmtMax->execute([$rundownId]);
@@ -738,7 +813,7 @@ if ($method === 'POST' && $action === 'save_story') {
     }
     
     $rundownId = $data['id'] ?? null;
-    $isLocked = $data['is_locked'] ?? 1;
+    $isLocked = intval($data['is_locked'] ?? 1);
     
     if ($rundownId) {
         $stmt = $db->prepare("UPDATE rundowns SET is_locked=? WHERE id=?");
@@ -801,6 +876,708 @@ if ($method === 'POST' && $action === 'save_story') {
         $stmt->execute([$id]);
     }
     echo json_encode(['success' => true]);
+
+} elseif ($method === 'GET' && $action === 'get_all_users') {
+    $user = $_SESSION['user'];
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']);
+        exit;
+    }
+    $query = "SELECT u.employee_id, u.full_name, u.role_id, u.department_id, 
+                     r.name as role_name, d.name as department_name 
+              FROM users u
+              LEFT JOIN roles r ON u.role_id = r.id
+              LEFT JOIN departments d ON u.department_id = d.id
+              ORDER BY u.created_at ASC";
+    $stmt = $db->query($query);
+    echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+
+} elseif ($method === 'GET' && $action === 'get_roles') {
+    $stmt = $db->query("SELECT id, name FROM roles ORDER BY id ASC");
+    echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+
+} elseif ($method === 'POST' && $action === 'save_user') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']);
+        exit;
+    }
+    
+    $user = $_SESSION['user'];
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']);
+        exit;
+    }
+    
+    $is_edit = $data['is_edit'] ?? false;
+    $employee_id = trim($data['employee_id'] ?? '');
+    $full_name = trim($data['full_name'] ?? '');
+    $password = $data['password'] ?? '';
+    $role_id = intval($data['role_id'] ?? 0);
+    $department_id = intval($data['department_id'] ?? 0);
+    
+    if (empty($employee_id) || empty($full_name) || empty($role_id) || empty($department_id)) {
+        echo json_encode(['success' => false, 'error' => 'Missing required fields']);
+        exit;
+    }
+    
+    if ($is_edit) {
+        if (!empty($password)) {
+            $hashed = password_hash($password, PASSWORD_BCRYPT);
+            $stmt = $db->prepare("UPDATE users SET full_name=?, password=?, role_id=?, department_id=? WHERE employee_id=?");
+            $stmt->execute([$full_name, $hashed, $role_id, $department_id, $employee_id]);
+        } else {
+            $stmt = $db->prepare("UPDATE users SET full_name=?, role_id=?, department_id=? WHERE employee_id=?");
+            $stmt->execute([$full_name, $role_id, $department_id, $employee_id]);
+        }
+    } else {
+        if (empty($password)) {
+            echo json_encode(['success' => false, 'error' => 'Password is required for new users']);
+            exit;
+        }
+        $stmtCheck = $db->prepare("SELECT COUNT(*) FROM users WHERE employee_id=?");
+        $stmtCheck->execute([$employee_id]);
+        if ($stmtCheck->fetchColumn() > 0) {
+            echo json_encode(['success' => false, 'error' => 'Username (Employee ID) already exists']);
+            exit;
+        }
+        
+        $hashed = password_hash($password, PASSWORD_BCRYPT);
+        $stmt = $db->prepare("INSERT INTO users (employee_id, full_name, password, role_id, department_id) VALUES (?, ?, ?, ?, ?)");
+        $stmt->execute([$employee_id, $full_name, $hashed, $role_id, $department_id]);
+    }
+    echo json_encode(['success' => true]);
+
+} elseif ($method === 'POST' && $action === 'delete_user') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']);
+        exit;
+    }
+    
+    $user = $_SESSION['user'];
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']);
+        exit;
+    }
+    
+    $employee_id = $data['employee_id'] ?? null;
+    if ($employee_id) {
+        if ($employee_id === $user['employee_id']) {
+            echo json_encode(['success' => false, 'error' => 'Cannot delete your own account']);
+            exit;
+        }
+        $stmt = $db->prepare("DELETE FROM users WHERE employee_id=?");
+        $stmt->execute([$employee_id]);
+    }
+    echo json_encode(['success' => true]);
+
+} elseif ($method === 'POST' && $action === 'save_department') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']);
+        exit;
+    }
+    
+    $user = $_SESSION['user'];
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']);
+        exit;
+    }
+    
+    $id = $data['id'] ?? null;
+    $name = trim($data['name'] ?? '');
+    
+    if (empty($name)) {
+        echo json_encode(['success' => false, 'error' => 'Department name is required']);
+        exit;
+    }
+    
+    // Ensure uniqueness
+    $stmtCheck = $db->prepare("SELECT COUNT(*) FROM departments WHERE name=? AND id!=?");
+    $stmtCheck->execute([$name, $id ?? 0]);
+    if ($stmtCheck->fetchColumn() > 0) {
+        echo json_encode(['success' => false, 'error' => 'Department name already exists']);
+        exit;
+    }
+    
+    if ($id) {
+        $stmt = $db->prepare("UPDATE departments SET name=? WHERE id=?");
+        $stmt->execute([$name, $id]);
+    } else {
+        $stmt = $db->prepare("INSERT INTO departments (name) VALUES (?)");
+        $stmt->execute([$name]);
+    }
+    echo json_encode(['success' => true]);
+
+} elseif ($method === 'POST' && $action === 'delete_department') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']);
+        exit;
+    }
+    
+    $user = $_SESSION['user'];
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']);
+        exit;
+    }
+    
+    $id = $data['id'] ?? null;
+    if ($id) {
+        // Prevent deletion if connected to stories or users 
+        $stmtCheck1 = $db->prepare("SELECT COUNT(*) FROM users WHERE department_id=?");
+        $stmtCheck1->execute([$id]);
+        if ($stmtCheck1->fetchColumn() > 0) {
+            echo json_encode(['success' => false, 'error' => 'Cannot delete: Department is actively assigned to Users.']);
+            exit;
+        }
+
+        $stmtCheck2 = $db->prepare("SELECT COUNT(*) FROM stories WHERE department_id=?");
+        $stmtCheck2->execute([$id]);
+        if ($stmtCheck2->fetchColumn() > 0) {
+            echo json_encode(['success' => false, 'error' => 'Cannot delete: Department is assigned to existing Stories.']);
+            exit;
+        }
+
+        $stmt = $db->prepare("DELETE FROM departments WHERE id=?");
+        $stmt->execute([$id]);
+    }
+    echo json_encode(['success' => true]);
+
+} elseif ($method === 'GET' && $action === 'get_dashboard_stats') {
+    $user = $_SESSION['user'];
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']);
+        exit;
+    }
+
+    $stats = [];
+    
+    // 1. Total users
+    $stmtUsers = $db->query("SELECT COUNT(*) FROM users");
+    $stats['total_users'] = (int)$stmtUsers->fetchColumn();
+
+    // 2. Total active stories (not deleted)
+    $stmtStories = $db->query("SELECT COUNT(*) FROM stories WHERE is_deleted = 0 AND format != 'BREAK'");
+    $stats['total_stories'] = (int)$stmtStories->fetchColumn();
+
+    // 3. Status breakdown
+    $stmtStatus = $db->query("SELECT status, COUNT(*) as count FROM stories WHERE is_deleted = 0 AND format != 'BREAK' GROUP BY status");
+    $statusCounts = [];
+    while ($row = $stmtStatus->fetch(PDO::FETCH_ASSOC)) {
+        $statusCounts[$row['status']] = (int)$row['count'];
+    }
+    $stats['status_counts'] = $statusCounts;
+
+    // 4. Department breakdown
+    $stmtDept = $db->query("SELECT d.name as department_name, COUNT(s.id) as count 
+                            FROM stories s 
+                            LEFT JOIN departments d ON s.department_id = d.id 
+                            WHERE s.is_deleted = 0 AND s.format != 'BREAK' 
+                            GROUP BY d.name");
+    $deptCounts = [];
+    while ($row = $stmtDept->fetch(PDO::FETCH_ASSOC)) {
+        $name = empty($row['department_name']) ? 'Unknown' : $row['department_name'];
+        $deptCounts[$name] = (int)$row['count'];
+    }
+    $stats['dept_counts'] = $deptCounts;
+
+    // 5. Total rundowns
+    $stmtRundownsTot = $db->query("SELECT COUNT(*) FROM rundowns");
+    $stats['total_rundowns'] = (int)$stmtRundownsTot->fetchColumn();
+
+    // 6. Upcoming broadcasts
+    $stmtRun = $db->query("SELECT id, name, broadcast_time, target_trt 
+                           FROM rundowns 
+                           ORDER BY broadcast_time DESC 
+                           LIMIT 4");
+    $stats['upcoming_rundowns'] = $stmtRun->fetchAll(PDO::FETCH_ASSOC);
+
+    echo json_encode(['success' => true, 'data' => $stats]);
+
+} elseif ($method === 'GET' && $action === 'get_assignments') {
+    $status = $_GET['status'] ?? '';
+    $month = $_GET['month'] ?? ''; // YYYY-MM
+    $dept = $_GET['department_id'] ?? '';
+    
+    $user = $_SESSION['user'];
+    $role_id = intval($user['role_id']);
+    $user_emp_id = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
+    $user_dept = $user['department_id'];
+
+    $where = ["1=1"];
+    $params = [];
+
+    if ($role_id == 1 || $role_id == 4) {
+        $where[] = "a.reporter_id = ?";
+        $params[] = $user_emp_id;
+    } elseif ($role_id == 2) {
+        $where[] = "a.department_id = ?";
+        $params[] = $user_dept;
+    }
+    
+    if ($status) {
+        $where[] = "a.status = ?";
+        $params[] = $status;
+    }
+    if ($dept) {
+        $where[] = "a.department_id = ?";
+        $params[] = $dept;
+    }
+    if ($month) {
+        $where[] = "EXISTS (SELECT 1 FROM assignment_trips t WHERE t.assignment_id = a.id AND t.trip_date LIKE ?)";
+        $params[] = $month . '-%';
+    }
+    $where[] = "a.status != 'DELETED'";
+
+    $whereStr = implode(" AND ", $where);
+    $stmt = $db->prepare("SELECT a.*, d.name as department_name FROM assignments a LEFT JOIN departments d ON a.department_id = d.id WHERE $whereStr ORDER BY a.created_at DESC");
+    $stmt->execute($params);
+    $assignments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($assignments as &$ass) {
+        $stmtT = $db->prepare("SELECT * FROM assignment_trips WHERE assignment_id = ? ORDER BY trip_date ASC, start_time ASC");
+        $stmtT->execute([$ass['id']]);
+        $ass['trips'] = $stmtT->fetchAll(PDO::FETCH_ASSOC);
+
+        $stmtE = $db->prepare("SELECT e.*, m.name FROM assignment_equipment e LEFT JOIN equipment_master m ON e.equipment_name = m.name WHERE e.assignment_id = ?");
+        $stmtE->execute([$ass['id']]);
+        $ass['equipment'] = $stmtE->fetchAll(PDO::FETCH_ASSOC);
+    }
+    echo json_encode(['success' => true, 'data' => $assignments]);
+
+} elseif ($method === 'GET' && $action === 'get_assignment_detail') {
+    $id = intval($_GET['id'] ?? 0);
+    $stmt = $db->prepare("SELECT a.*, d.name as department_name FROM assignments a LEFT JOIN departments d ON a.department_id = d.id WHERE a.id = ?");
+    $stmt->execute([$id]);
+    $ass = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($ass) {
+        $stmtT = $db->prepare("SELECT * FROM assignment_trips WHERE assignment_id = ? ORDER BY trip_date ASC, start_time ASC");
+        $stmtT->execute([$id]);
+        $ass['trips'] = $stmtT->fetchAll(PDO::FETCH_ASSOC);
+
+        $stmtE = $db->prepare("SELECT * FROM assignment_equipment WHERE assignment_id = ?");
+        $stmtE->execute([$id]);
+        $ass['equipment'] = $stmtE->fetchAll(PDO::FETCH_ASSOC);
+        echo json_encode(['success' => true, 'data' => $ass]);
+    } else {
+        echo json_encode(['success' => false, 'error' => 'Assignment not found']);
+    }
+
+} elseif ($method === 'POST' && $action === 'create_assignment') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']); exit;
+    }
+
+    $user = $_SESSION['user'];
+    $role_id = intval($user['role_id']);
+    $user_emp_id = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
+    $user_dept = $user['department_id'];
+
+    $title = trim($data['title'] ?? '');
+    $reporter_id = $data['reporter_id'] ?? '';
+    
+    if ($role_id == 1 || $role_id == 4) {
+        if ($reporter_id !== $user_emp_id) {
+            echo json_encode(['success' => false, 'error' => 'Permission Denied: Can only create for yourself.']); exit;
+        }
+    } elseif ($role_id == 2) {
+        if ($data['department_id'] != $user_dept) {
+            echo json_encode(['success' => false, 'error' => 'Permission Denied: Can only create for your department.']); exit;
+        }
+    }
+
+    $db->beginTransaction();
+    try {
+        $stmt = $db->prepare("INSERT INTO assignments (title, description, reporter_id, reporter_name, department_id, created_by) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$title, $data['description'] ?? '', $reporter_id, $data['reporter_name'] ?? '', $data['department_id'] ?? 0, $user_emp_id]);
+        $assignmentId = $db->lastInsertId();
+
+        $trips = $data['trips'] ?? [];
+        if (empty($trips)) throw new Exception('At least 1 trip required.');
+        $stmtT = $db->prepare("INSERT INTO assignment_trips (assignment_id, trip_date, start_time, end_time, location_name, location_detail, order_index) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        foreach ($trips as $i => $t) {
+            $stmtT->execute([$assignmentId, $t['trip_date'], $t['start_time'], $t['end_time'] ?? null, $t['location_name'] ?? '', $t['location_detail'] ?? '', $i]);
+        }
+
+        $equip = $data['equipment'] ?? [];
+        if (!empty($equip)) {
+            $stmtE = $db->prepare("INSERT INTO assignment_equipment (assignment_id, equipment_name, quantity, note) VALUES (?, ?, ?, ?)");
+            foreach ($equip as $e) {
+                $stmtE->execute([$assignmentId, $e['equipment_name'], intval($e['quantity'] ?? 1), $e['note'] ?? '']);
+            }
+        }
+        $db->commit();
+        echo json_encode(['success' => true, 'id' => $assignmentId]);
+    } catch (Exception $e) {
+        $db->rollBack();
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+
+} elseif ($method === 'POST' && $action === 'update_assignment') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']); exit;
+    }
+    $assignmentId = intval($data['id'] ?? 0);
+    $user = $_SESSION['user'];
+    $role_id = intval($user['role_id']);
+    $user_emp_id = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
+    
+    $stmt = $db->prepare("SELECT * FROM assignments WHERE id = ?");
+    $stmt->execute([$assignmentId]);
+    $ass = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$ass || $ass['status'] !== 'PENDING') {
+        echo json_encode(['success' => false, 'error' => 'Can only edit PENDING assignments.']); exit;
+    }
+    
+    if ($role_id == 1 || $role_id == 4) {
+        if ($ass['created_by'] !== $user_emp_id) {
+            echo json_encode(['success' => false, 'error' => 'Permission Denied: Can only edit your own created assignment.']); exit;
+        }
+    } elseif ($role_id == 2) {
+        if ($ass['department_id'] != $user['department_id']) {
+            echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
+        }
+    }
+
+    $db->beginTransaction();
+    try {
+        $stmtU = $db->prepare("UPDATE assignments SET title=?, description=?, reporter_id=?, reporter_name=?, department_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
+        $stmtU->execute([$data['title'], $data['description'] ?? '', $data['reporter_id'], $data['reporter_name'], $data['department_id'], $assignmentId]);
+        
+        $db->exec("DELETE FROM assignment_trips WHERE assignment_id = $assignmentId");
+        $db->exec("DELETE FROM assignment_equipment WHERE assignment_id = $assignmentId");
+        
+        $trips = $data['trips'] ?? [];
+        if (empty($trips)) throw new Exception('At least 1 trip required.');
+        $stmtT = $db->prepare("INSERT INTO assignment_trips (assignment_id, trip_date, start_time, end_time, location_name, location_detail, order_index) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        foreach ($trips as $i => $t) {
+            $stmtT->execute([$assignmentId, $t['trip_date'], $t['start_time'], $t['end_time'] ?? null, $t['location_name'] ?? '', $t['location_detail'] ?? '', $i]);
+        }
+
+        $equip = $data['equipment'] ?? [];
+        if (!empty($equip)) {
+            $stmtE = $db->prepare("INSERT INTO assignment_equipment (assignment_id, equipment_name, quantity, note) VALUES (?, ?, ?, ?)");
+            foreach ($equip as $e) {
+                $stmtE->execute([$assignmentId, $e['equipment_name'], intval($e['quantity'] ?? 1), $e['note'] ?? '']);
+            }
+        }
+        $db->commit();
+        echo json_encode(['success' => true]);
+    } catch (Exception $e) {
+        $db->rollBack();
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+
+} elseif ($method === 'POST' && $action === 'delete_assignment') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']); exit;
+    }
+    
+    $id = intval($data['id'] ?? 0);
+    $user = $_SESSION['user'];
+    $user_emp_id = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
+    $role_id = intval($user['role_id']);
+
+    $stmt = $db->prepare("SELECT * FROM assignments WHERE id = ?");
+    $stmt->execute([$id]);
+    $ass = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$ass) {
+        echo json_encode(['success' => true]); exit;
+    }
+    
+    if ($role_id != 3) {
+        if ($ass['created_by'] !== $user_emp_id || $ass['status'] !== 'PENDING') {
+            echo json_encode(['success' => false, 'error' => 'Permission Denied: Can only delete your own PENDING assignments.']); exit;
+        }
+    }
+    
+    $stmtDel = $db->prepare("UPDATE assignments SET status='DELETED' WHERE id=?");
+    $stmtDel->execute([$id]);
+    echo json_encode(['success' => true]);
+
+} elseif ($method === 'POST' && $action === 'approve_assignment') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']); exit;
+    }
+    
+    $user = $_SESSION['user'];
+    $role_id = intval($user['role_id']);
+    if ($role_id == 1 || $role_id == 4) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
+    }
+    $id = intval($data['id'] ?? 0);
+    
+    $stmt = $db->prepare("SELECT * FROM assignments WHERE id = ?");
+    $stmt->execute([$id]);
+    $ass = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($role_id == 2 && $ass['department_id'] != $user['department_id']) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
+    }
+    if ($ass['status'] !== 'PENDING') {
+        echo json_encode(['success' => false, 'error' => 'Must be PENDING']); exit;
+    }
+    
+    $stmtA = $db->prepare("UPDATE assignments SET status='APPROVED', approved_by=?, approved_at=CURRENT_TIMESTAMP WHERE id=?");
+    $stmtA->execute([$user['employee_id'] ?? $user['id'] ?? $user['full_name'], $id]);
+    echo json_encode(['success' => true]);
+
+} elseif ($method === 'POST' && $action === 'reject_assignment') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']); exit;
+    }
+    $user = $_SESSION['user'];
+    $role_id = intval($user['role_id']);
+    if ($role_id == 1 || $role_id == 4) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
+    }
+    $id = intval($data['id'] ?? 0);
+    $note = trim($data['rejection_note'] ?? '');
+    if (!$note) {
+        echo json_encode(['success' => false, 'error' => 'Rejection note required']); exit;
+    }
+    
+    $stmt = $db->prepare("SELECT * FROM assignments WHERE id = ?");
+    $stmt->execute([$id]);
+    $ass = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($role_id == 2 && $ass['department_id'] != $user['department_id']) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
+    }
+    
+    $stmtA = $db->prepare("UPDATE assignments SET status='REJECTED', rejection_note=? WHERE id=?");
+    $stmtA->execute([$note, $id]);
+    echo json_encode(['success' => true]);
+
+} elseif ($method === 'POST' && $action === 'complete_assignment') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']); exit;
+    }
+    $id = intval($data['id'] ?? 0);
+    $user = $_SESSION['user'];
+    $role_id = intval($user['role_id']);
+    $user_emp_id = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
+    
+    $stmt = $db->prepare("SELECT * FROM assignments WHERE id = ?");
+    $stmt->execute([$id]);
+    $ass = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if ($role_id == 1 || $role_id == 4) {
+        if ($ass['reporter_id'] !== $user_emp_id) {
+            echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
+        }
+    } elseif ($role_id == 2) {
+        if ($ass['department_id'] != $user['department_id']) {
+            echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
+        }
+    }
+    
+    if ($ass['status'] !== 'APPROVED') {
+        echo json_encode(['success' => false, 'error' => 'Can only complete APPROVED assignment']); exit;
+    }
+    
+    $stmtC = $db->prepare("UPDATE assignments SET status='COMPLETED' WHERE id=?");
+    $stmtC->execute([$id]);
+    echo json_encode(['success' => true]);
+
+} elseif ($method === 'GET' && $action === 'get_assignments') {
+    $month = $_GET['month'] ?? ''; // YYYY-MM
+    $dept_id = $_GET['department_id'] ?? '';
+    $user = $_SESSION['user'];
+    $role_id = intval($user['role_id']);
+    $user_emp_id = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
+    $user_dept = $user['department_id'];
+
+    $where = ["a.status != 'DELETED'"];
+    $params = [];
+
+    if ($month !== '') {
+        $where[] = "EXISTS (SELECT 1 FROM assignment_trips t WHERE t.assignment_id = a.id AND t.trip_date LIKE ?)";
+        $params[] = $month . '-%';
+    }
+
+    if ($role_id == 1 || $role_id == 4) {
+        $where[] = "a.reporter_id = ?";
+        $params[] = $user_emp_id;
+    } elseif ($role_id == 2) {
+        $where[] = "a.department_id = ?";
+        $params[] = $user_dept;
+    } else {
+        if ($dept_id !== '') {
+            $where[] = "a.department_id = ?";
+            $params[] = $dept_id;
+        }
+    }
+
+    $whereStr = implode(" AND ", $where);
+    $query = "SELECT a.*, d.name as department_name,
+              (SELECT GROUP_CONCAT(equipment_name) FROM assignment_equipment e WHERE e.assignment_id = a.id) as equipment_list
+              FROM assignments a
+              LEFT JOIN departments d ON a.department_id = d.id
+              WHERE $whereStr
+              ORDER BY a.updated_at DESC";
+    $stmt = $db->prepare($query);
+    $stmt->execute($params);
+    $assignments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach($assignments as &$a) {
+        $stmtT = $db->prepare("SELECT * FROM assignment_trips WHERE assignment_id = ? ORDER BY trip_date ASC, start_time ASC LIMIT 1");
+        $stmtT->execute([$a['id']]);
+        $firstTrip = $stmtT->fetch(PDO::FETCH_ASSOC);
+        $a['first_trip_date'] = $firstTrip ? $firstTrip['trip_date'] : null;
+    }
+
+    echo json_encode(['success' => true, 'data' => $assignments]);
+
+} elseif ($method === 'GET' && $action === 'get_equipment_master_all') {
+    $user = $_SESSION['user'];
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
+    }
+    $stmt = $db->query("SELECT * FROM equipment_master ORDER BY category, name");
+    echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+
+} elseif ($method === 'POST' && $action === 'save_equipment') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']); exit;
+    }
+    $user = $_SESSION['user'];
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
+    }
+    $id = intval($data['id'] ?? 0);
+    $name = trim($data['name'] ?? '');
+    $cat = trim($data['category'] ?? '');
+    $qty = intval($data['total_units'] ?? 1);
+    $active = intval($data['is_active'] ?? 1);
+
+    if (!$name) {
+        echo json_encode(['success' => false, 'error' => 'Equipment name is required']); exit;
+    }
+
+    try {
+        if ($id) {
+            $stmt = $db->prepare("UPDATE equipment_master SET name=?, category=?, total_units=?, is_active=? WHERE id=?");
+            $stmt->execute([$name, $cat, $qty, $active, $id]);
+        } else {
+            $stmt = $db->prepare("INSERT INTO equipment_master (name, category, total_units, is_active) VALUES (?, ?, ?, ?)");
+            $stmt->execute([$name, $cat, $qty, $active]);
+        }
+        echo json_encode(['success' => true]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'error' => 'Duplicate item name or server error']);
+    }
+
+} elseif ($method === 'POST' && $action === 'delete_equipment') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']); exit;
+    }
+    $user = $_SESSION['user'];
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
+    }
+    $id = intval($data['id'] ?? 0);
+    try {
+        $stmtName = $db->prepare("SELECT name FROM equipment_master WHERE id = ?");
+        $stmtName->execute([$id]);
+        $name = $stmtName->fetchColumn();
+        if ($name) {
+            $stmtCheck = $db->prepare("SELECT COUNT(*) FROM assignment_equipment WHERE equipment_name = ?");
+            $stmtCheck->execute([$name]);
+            if ($stmtCheck->fetchColumn() > 0) {
+                echo json_encode(['success' => false, 'error' => 'Cannot delete item currently used in assignments. Select "Inactive" status instead.']); exit;
+            }
+            $stmtDel = $db->prepare("DELETE FROM equipment_master WHERE id = ?");
+            $stmtDel->execute([$id]);
+            echo json_encode(['success' => true]);
+        } else {
+            echo json_encode(['success' => true]);
+        }
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+
+} elseif ($method === 'GET' && $action === 'get_equipment_master') {
+    $stmt = $db->query("SELECT * FROM equipment_master WHERE is_active = 1");
+    echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+
+} elseif ($method === 'GET' && $action === 'get_equipment_conflicts') {
+    $date = trim($_GET['date'] ?? '');
+    if (!$date) {
+         echo json_encode(['success' => true, 'data' => []]); exit;
+    }
+    $query = "SELECT e.equipment_name, SUM(e.quantity) as used_qty
+              FROM assignment_equipment e
+              JOIN assignments a ON e.assignment_id = a.id
+              JOIN assignment_trips t ON a.id = t.assignment_id
+              WHERE t.trip_date = ? AND a.status IN ('APPROVED', 'PENDING')
+              GROUP BY e.equipment_name";
+    $stmt = $db->prepare($query);
+    $stmt->execute([$date]);
+    echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+
+} elseif ($method === 'GET' && $action === 'get_calendar_data') {
+    $month = $_GET['month'] ?? ''; // YYYY-MM
+    $user = $_SESSION['user'];
+    $role_id = intval($user['role_id']);
+    $user_emp_id = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
+    $user_dept = $user['department_id'];
+
+    $where = ["a.status != 'DELETED'", "t.trip_date LIKE ?"];
+    $params = [$month . '-%'];
+
+    if ($role_id == 1 || $role_id == 4) {
+        $where[] = "a.reporter_id = ?";
+        $params[] = $user_emp_id;
+    } elseif ($role_id == 2) {
+        $where[] = "a.department_id = ?";
+        $params[] = $user_dept;
+    }
+
+    $whereStr = implode(" AND ", $where);
+    $sql = "SELECT t.trip_date as date, a.id as assignment_id, a.title, a.status, a.reporter_name, t.location_name
+            FROM assignment_trips t
+            JOIN assignments a ON t.assignment_id = a.id
+            WHERE $whereStr";
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+    $trips = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($trips as &$t) {
+        $stmtEQ = $db->prepare("SELECT equipment_name FROM assignment_equipment WHERE assignment_id = ?");
+        $stmtEQ->execute([$t['assignment_id']]);
+        $t['equipment'] = $stmtEQ->fetchAll(PDO::FETCH_COLUMN); // Array of names
+    }
+
+    echo json_encode(['success' => true, 'data' => $trips]);
+
+} elseif ($method === 'GET' && $action === 'get_assignment_badge_count') {
+    $user = $_SESSION['user'];
+    $role_id = intval($user['role_id']);
+    $user_emp_id = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
+    $user_dept = $user['department_id'];
+
+    if ($role_id == 1 || $role_id == 4) {
+        $stmt = $db->prepare("SELECT COUNT(*) FROM assignments WHERE reporter_id = ? AND status = 'REJECTED'");
+        $stmt->execute([$user_emp_id]);
+    } elseif ($role_id == 2) {
+        $stmt = $db->prepare("SELECT COUNT(*) FROM assignments WHERE department_id = ? AND status = 'PENDING'");
+        $stmt->execute([$user_dept]);
+    } elseif ($role_id == 3) {
+        $stmt = $db->query("SELECT COUNT(*) FROM assignments WHERE status = 'PENDING'");
+    } else {
+        echo json_encode(['success' => true, 'count' => 0]); exit;
+    }
+    echo json_encode(['success' => true, 'count' => $stmt->fetchColumn()]);
 
 } else {
     echo json_encode(['success' => false, 'error' => 'Invalid Action']);

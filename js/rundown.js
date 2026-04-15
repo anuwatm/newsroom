@@ -126,7 +126,7 @@ async function createNewRundown() {
         let optionsHtml = '';
         if (pJson.success && pJson.data.length > 0) {
             pJson.data.forEach(p => {
-                optionsHtml += `<option value="${p.id}" data-dur="${p.duration}" data-break="${p.break_count}">${p.name} (เป้า: ${Math.floor(p.duration/60)}m, Break: ${p.break_count})</option>`;
+                optionsHtml += `<option value="${p.id}" data-dur="${p.duration}" data-break="${p.break_count}">${escapeHTML(p.name)} (เป้า: ${Math.floor(p.duration/60)}m, Break: ${p.break_count})</option>`;
             });
         }
         
@@ -364,6 +364,7 @@ function handleDragOver(e) {
 function handleDrop(e) {
     if (e.stopPropagation) e.stopPropagation();
     const dropTarget = e.target.closest('.table-row');
+    if (!dropTarget) return false;
     if (draggedRowId !== dropTarget) {
         // Swap or Insert
         const container = document.getElementById('rundown-rows');

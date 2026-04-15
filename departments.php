@@ -6,7 +6,7 @@ if (!isset($_SESSION['user'])) {
 }
 $user = $_SESSION['user'];
 
-// Only role_id 3 (admin) can access Master Data
+// Only role_id 3 (admin) can access Department Management
 if ($user['role_id'] != 3) {
     echo "<h1>Permission Denied. Only Admin can access this page.</h1>";
     exit;
@@ -22,8 +22,8 @@ $csrf_token = $_SESSION['csrf_token'];
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Master Data Admin - News Room</title>
-    <link rel="stylesheet" href="style.css?v=5">
+    <title>Department Management - News Room</title>
+    <link rel="stylesheet" href="style.css?v=6">
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -55,30 +55,29 @@ $csrf_token = $_SESSION['csrf_token'];
 
     <div class="admin-app">
         <div class="admin-header">
-            <h2>Programs Master Data</h2>
-            <button class="btn btn-primary" onclick="openProgramForm()">+ Create New Program</button>
+            <h2>Department Management</h2>
+            <button class="btn btn-primary" onclick="openDepartmentForm()">+ Create New Department</button>
         </div>
 
         <table class="table-admin">
             <thead>
                 <tr>
                     <th>ID</th>
-                    <th>Program Name</th>
-                    <th>Target Duration (Min)</th>
-                    <th>Auto Commercial Breaks</th>
+                    <th>Department Name</th>
                     <th style="text-align: right;">Actions</th>
                 </tr>
             </thead>
-            <tbody id="programs-body">
+            <tbody id="departments-body">
                 <!-- Loaded via JS -->
             </tbody>
         </table>
     </div>
 
     <script>
+        const windowUser = <?php echo json_encode($user); ?>;
         const csrfToken = <?php echo json_encode($csrf_token); ?>;
 
-        document.addEventListener('DOMContentLoaded', loadPrograms);
+        document.addEventListener('DOMContentLoaded', loadDepartments);
         
         const escapeHTML = (str) => {
             if (!str) return '';
@@ -93,27 +92,23 @@ $csrf_token = $_SESSION['csrf_token'];
             );
         };
 
-        async function loadPrograms() {
+        async function loadDepartments() {
             try {
-                const res = await fetch('api.php?action=get_programs');
+                const res = await fetch('api.php?action=get_departments');
                 const json = await res.json();
                 
-                const tbody = document.getElementById('programs-body');
+                const tbody = document.getElementById('departments-body');
                 tbody.innerHTML = '';
                 
                 if (json.success) {
-                    json.data.forEach(p => {
+                    json.data.forEach(d => {
                         const tr = document.createElement('tr');
-                        const durMin = Math.floor(parseInt(p.duration) / 60);
-                        
                         tr.innerHTML = `
-                            <td style="color:#888;">${p.id}</td>
-                            <td style="font-weight: bold;">${escapeHTML(p.name)}</td>
-                            <td>${durMin} นาที (${p.duration}s)</td>
-                            <td>${p.break_count}</td>
+                            <td style="color:#888;">${escapeHTML(d.id)}</td>
+                            <td style="font-weight: bold;">${escapeHTML(d.name)}</td>
                             <td style="text-align: right;">
-                                <button class="btn-sm btn-edit" onclick='openProgramForm(${JSON.stringify(p).replace(/'/g, "&apos;")})'>Edit</button>
-                                <button class="btn-sm btn-delete" onclick='deleteProgram(${p.id})'>Del</button>
+                                <button class="btn-sm btn-edit" onclick='openDepartmentForm(${JSON.stringify(d).replace(/'/g, "&apos;")})'>Edit</button>
+                                <button class="btn-sm btn-delete" onclick='deleteDepartment(${d.id})'>Del</button>
                             </td>
                         `;
                         tbody.appendChild(tr);
@@ -124,37 +119,36 @@ $csrf_token = $_SESSION['csrf_token'];
             }
         }
 
-        async function openProgramForm(program = null) {
-            const isEdit = !!program;
-            let pName = isEdit ? escapeHTML(program.name) : '';
-            let pDur = isEdit ? Math.floor(parseInt(program.duration) / 60) : 30;
-            let pBreak = isEdit ? program.break_count : 0;
+        async function openDepartmentForm(dept = null) {
+            const isEdit = !!dept;
+            let dName = isEdit ? escapeHTML(dept.name) : '';
             
             const { value: formValues } = await Swal.fire({
-                title: isEdit ? 'Edit Program' : 'Create Program',
+                title: isEdit ? 'Edit Department' : 'Create Department',
                 html: `
-                    <label style="display:block; text-align:left; color:#ccc; font-size:12px; margin-top:10px;">Program Name</label>
-                    <input id="swal-p-name" class="swal2-input" value="${pName}">
-                    <label style="display:block; text-align:left; color:#ccc; font-size:12px; margin-top:20px;">Target Duration (Minutes)</label>
-                    <input id="swal-p-dur" type="number" class="swal2-input" value="${pDur}">
-                    <label style="display:block; text-align:left; color:#ccc; font-size:12px; margin-top:20px;">Auto Add N Commercial Breaks</label>
-                    <input id="swal-p-break" type="number" class="swal2-input" value="${pBreak}">
+                    <label style="display:block; text-align:left; color:#ccc; font-size:12px; margin-top:10px;">Department Name</label>
+                    <input id="swal-d-name" class="swal2-input" value="${dName}">
                 `,
                 focusConfirm: false,
                 showCancelButton: true,
                 preConfirm: () => {
+                    const name = document.getElementById('swal-d-name').value.trim();
+
+                    if (!name) {
+                        Swal.showValidationMessage('Please provide a department name');
+                        return false;
+                    }
+
                     return {
-                        id: isEdit ? program.id : null,
-                        name: document.getElementById('swal-p-name').value,
-                        duration: parseInt(document.getElementById('swal-p-dur').value) * 60,
-                        break_count: parseInt(document.getElementById('swal-p-break').value)
+                        id: isEdit ? dept.id : null,
+                        name: name
                     };
                 }
             });
 
-            if (formValues && formValues.name) {
+            if (formValues) {
                 try {
-                    const res = await fetch('api.php?action=save_program', {
+                    const res = await fetch('api.php?action=save_department', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({
@@ -164,8 +158,8 @@ $csrf_token = $_SESSION['csrf_token'];
                     });
                     const json = await res.json();
                     if (json.success) {
-                        Swal.fire('Saved!', '', 'success');
-                        loadPrograms();
+                        Swal.fire({ title: 'Saved!', icon: 'success', timer: 1500, showConfirmButton: false });
+                        loadDepartments();
                     } else {
                         Swal.fire('Error', json.error, 'error');
                     }
@@ -175,10 +169,10 @@ $csrf_token = $_SESSION['csrf_token'];
             }
         }
         
-        async function deleteProgram(id) {
-            if (confirm("Are you sure you want to delete this program Master Data? Historical records referencing this ID might lose linking info.")) {
+        async function deleteDepartment(id) {
+            if (confirm("Are you sure you want to delete this department? Operation will abort if users or stories still belong to it.")) {
                 try {
-                    const res = await fetch('api.php?action=delete_program', {
+                    const res = await fetch('api.php?action=delete_department', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({
@@ -188,7 +182,9 @@ $csrf_token = $_SESSION['csrf_token'];
                     });
                     const json = await res.json();
                     if (json.success) {
-                        loadPrograms();
+                        loadDepartments();
+                    } else {
+                        Swal.fire('Error', json.error, 'error');
                     }
                 } catch (e) {}
             }
