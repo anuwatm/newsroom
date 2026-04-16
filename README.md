@@ -91,11 +91,19 @@
     - ระบบต่อต้านการเจาะช่องโหว่ XSS Injection เต็มรูปแบบ ทั้งในรูปแบบการแสดงผล DOM Elements, Modals และ Inline Script JSON Encodings
     - ระบบการเคลียร์บัญชีและระงับ Session Cookies ทิ้งทันทีเมื่อกดออกจากระบบ ป้องกัน Session Fixation อย่างรัดกุม
 
+15. **ระบบกระดานควบคุมข้อมูลและสถิติ (Admin Dashboard & Analytics)**
+    - แดชบอร์ดแบบเรียลไทม์ (`dashboard.php`) วิเคราะห์และแสดงกราฟ (Chart.js) สถานะข่าว (Story Status)
+    - ติดตามและประเมินภาระงานของแต่ละแผนก (Department Workload) ดูภาพรวมการทำงานในองค์กรแบบรวดเร็ว
+
+16. **ระบบหมายข่าวและจองคิวอุปกรณ์ (Assignment & Equipment Booking)**
+    - **หมายข่าว (Assignment):** ระบบสั่งจ่ายหมายข่าวให้กับผู้สื่อข่าวและตากล้อง พร้อมหน้าต่างสั่งปริ้นท์ใบหมายงาน (`print_assignment.php`)
+    - **จัดการอุปกรณ์ (Equipment):** จัดการคลังอุปกรณ์และติดตามสถานะการถูกจอง/ใช้งาน สำหรับการออกกอง
+
 ---
 
 ## 🛠 เทคโนโลยีที่ใช้งาน (Tech Stack)
 
-- **Frontend:** HTML5, Vanilla JavaScript (ES6 Modules), CSS3 (Modern UI) + SweetAlert2
+- **Frontend:** HTML5, Vanilla JavaScript (ES6 Modules), CSS3 (Modern UI), Chart.js (Dashboard Analytics) + SweetAlert2
 - **Backend:** PHP 8+ (Phonetic Logic, API & Session Authentication)
 - **Database / File System:** SQLite (อยู่โฟลเดอร์ `database/`) + JSON Data Archives (`data/stories/`)
 
@@ -120,12 +128,18 @@
 
 - `index.php` - หน้าหลักสำหรับเขียนบทข่าว (Main Editor UI)
 - `rundown.php` - แดชบอร์ดเรียงคิวลำดับข่าว (Rundown Management Engine)
-- `admin.php` - หน้าแอดมินสำหรับตั้งค่าฐานข้อมูลพื้นฐานรายการต่างๆ (Master Data Control)
-- `print_story.php` - สคริปต์สกัดดึงข้อมูลเฉพาะร่างขึ้นแผ่นพิมพ์สำหรับแจกจ่ายความเร็วสูง (Direct Slim-Print)
-- `login.php` / `logout.php` - ระบบจัดการ Session 
-- `api.php` - เอนจินหลังบ้านทำหน้าที่รับ JSON Payload, ขับเคลื่อนผังคิว Rundown และถอดรหัส Soundex ทรงพลัง
-- `db.php` - ระบบจัดการฐานข้อมูล SQLite (สร้างสคีมา / ป้อนบัญชีตั้งต้น)
-- `js/` - โมดูล JavaScript (ES6) (เช่น `main.js`, `editor.js`, `api.js`, `archive.js`, `mystory.js`, `print.js`, `rundown.js`)
-- `style.css` - สไตล์ดีไซน์หลักกระจกแบบพรีเมียม (Premium Theme) รวมถึงพิมพ์
-- `database/` - โาร์กเก็บไฟล์ SQLite (`newsroom.sqlite`)
-- `data/stories/` - ซุ้มเก็บคลังเสบียง (Payload Store) ประเภท JSON ประวัติเอกสารทั้งหมด แตกเวอร์ชันอิสระ
+- `dashboard.php` - แดชบอร์ดแสดงผลสถิติและกราฟวิเคราะห์ (Admin Analytics)
+- `assignment.php` - ระบบจัดการใบหมายข่าวและมอบหมายงานให้ทีม
+- `equipment.php` - ระบบคลังจัดการอุปกรณ์และแบบฟอร์มการเบิกจ่าย
+- `admin.php` - หน้าตั้งค่ารายการและโครงสร้าง Rundown (Master Data Control)
+- `departments.php` / `users.php` - ระบบจัดการข้อมูลโครงสร้างแผนกและสิทธิผู้ใช้งานองค์กร
+- `top_menu.php` - ไฟล์โมดูลของแท็บเมนูการเข้าถึงหน้าต่างต่างๆ ระบบค้นหาข่าวและสถานะผู้ใช้ 
+- `print_story.php` - สคริปต์สกัดข้อมูลพิมพ์บทข่าวแบบ A4 ขาว-ดำ
+- `print_assignment.php` - สคริปต์สั่งพิมพ์ใบหมายงาน
+- `login.php` / `logout.php` - ระบบป้องกันและตรวจสอบ Session
+- `api.php` - เอนจินหลังบ้านทำหน้าที่รับ JSON Payload, ขับเคลื่อนฐานข้อมูล, ลอจิก Soundex
+- `db.php` - เอนจินตั้งต้น SQLite 
+- `js/` - โมดูลแยกการทำงาน JavaScript ตามฟังก์ชัน (ES6) 
+- `style.css` - สไตล์ดีไซน์หลักกระจกแบบพรีเมียม (Premium Theme)
+- `database/` - ซุ้มเก็บไฟล์ SQLite (`newsroom.sqlite`)
+- `data/stories/` - ซุ้มเก็บประวัติข้อความและเวอร์ชัน JSON
