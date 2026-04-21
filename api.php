@@ -13,6 +13,13 @@ if (!is_dir($dataDir)) {
     mkdir($dataDir, 0755, true);
 }
 
+// Global Presence Heartbeat
+if (isset($_SESSION['user'])) {
+    try {
+        $db->exec("UPDATE users SET last_seen = CURRENT_TIMESTAMP WHERE employee_id = '{$_SESSION['user']['employee_id']}'");
+    } catch(Exception $e) {}
+}
+
 // Ensure migrations for new columns
 try {
     $db->exec("CREATE TABLE IF NOT EXISTS rundowns (
@@ -56,6 +63,18 @@ try {
 
 try {
     $db->exec("ALTER TABLE rundowns ADD COLUMN program_id INTEGER");
+} catch (Exception $e) {}
+
+try {
+    $db->exec("ALTER TABLE rundowns ADD COLUMN locked_by TEXT");
+} catch (Exception $e) {}
+
+try {
+    $db->exec("ALTER TABLE rundowns ADD COLUMN locked_at DATETIME");
+} catch (Exception $e) {}
+
+try {
+    $db->exec("ALTER TABLE users ADD COLUMN last_seen DATETIME");
 } catch (Exception $e) {}
 
 try {
@@ -617,6 +636,12 @@ if ($method === 'POST' && $action === 'save_story') {
         echo json_encode(['success' => false, 'error' => 'Rundown not found']);
         exit;
     }
+
+    try {
+        $user_fullname = $_SESSION['user']['full_name'];
+        $db->prepare("UPDATE rundowns SET locked_by = ?, locked_at = CURRENT_TIMESTAMP WHERE id = ?")
+           ->execute([$user_fullname, $rundownId]);
+    } catch(Exception $e) {}
     
     $stmtStories = $db->prepare("
         SELECT rs.id as rundown_story_id, rs.order_index, rs.is_dropped, rs.is_break, rs.break_duration,
@@ -1094,14 +1119,161 @@ if ($method === 'POST' && $action === 'save_story') {
     $stmtRundownsTot = $db->query("SELECT COUNT(*) FROM rundowns");
     $stats['total_rundowns'] = (int)$stmtRundownsTot->fetchColumn();
 
-    // 6. Upcoming broadcasts
-    $stmtRun = $db->query("SELECT id, name, broadcast_time, target_trt 
-                           FROM rundowns 
-                           ORDER BY broadcast_time DESC 
-                           LIMIT 4");
+    // 6. Upcoming broadcasts with TRT Calculation
+    $stmtRun = $db->query("
+        SELECT r.id, r.name, r.broadcast_time, r.target_trt,
+               COALESCE(trt.script_time, 0) + COALESCE(trt.total_break, 0) as current_trt
+        FROM rundowns r 
+        LEFT JOIN (
+            SELECT rs.rundown_id, 
+                   SUM(CASE WHEN rs.is_break = 0 THEN s.estimated_time ELSE 0 END) as script_time, 
+                   SUM(rs.break_duration) as total_break 
+            FROM rundown_stories rs 
+            LEFT JOIN stories s ON rs.story_id = s.id 
+            WHERE rs.is_dropped = 0 
+            GROUP BY rs.rundown_id
+        ) as trt ON r.id = trt.rundown_id
+        ORDER BY r.broadcast_time DESC 
+        LIMIT 5
+    ");
     $stats['upcoming_rundowns'] = $stmtRun->fetchAll(PDO::FETCH_ASSOC);
 
+    // 7. Total assignments
+    $stmtAss = $db->query("SELECT COUNT(*) FROM assignments");
+    $stats['total_assignments'] = (int)$stmtAss->fetchColumn();
+
+    // 8. Assignment status breakdown
+    $stmtAssStat = $db->query("SELECT status, COUNT(*) as count FROM assignments GROUP BY status");
+    $astatusCounts = [];
+    while ($row = $stmtAssStat->fetch(PDO::FETCH_ASSOC)) {
+        $astatusCounts[$row['status']] = (int)$row['count'];
+    }
+    $stats['assignment_counts'] = $astatusCounts;
+
+    // 9. Equipment stats & Critical Alerts
+    $stmtEq1 = $db->query("SELECT SUM(total_units) FROM equipment_master WHERE is_active = 1");
+    $stats['total_equipment'] = (int)$stmtEq1->fetchColumn();
+
+    $stmtEq2 = $db->query("SELECT SUM(ae.quantity) FROM assignment_equipment ae JOIN assignments a ON ae.assignment_id = a.id WHERE a.status IN ('PENDING', 'APPROVED')");
+    $stats['borrowed_equipment'] = (int)$stmtEq2->fetchColumn();
+
+    // 10. Reporter Productivity (Top 5 Authors)
+    $stmtTopRep = $db->query("
+        SELECT author_id, COUNT(*) as count 
+        FROM stories 
+        WHERE is_deleted = 0 AND author_id IS NOT NULL AND author_id != '' 
+        GROUP BY author_id 
+        ORDER BY count DESC 
+        LIMIT 5
+    ");
+    $stats['top_reporters'] = $stmtTopRep->fetchAll(PDO::FETCH_ASSOC);
+
+    // 11. Recent Activity Feed (Stories + Assignments)
+    $stmtAct1 = $db->query("SELECT 'Story' as type, slug as title, updated_at as timestamp, status, updated_at FROM stories WHERE is_deleted = 0 ORDER BY updated_at DESC LIMIT 5");
+    $act1 = $stmtAct1->fetchAll(PDO::FETCH_ASSOC);
+    
+    $stmtAct2 = $db->query("SELECT 'Assignment' as type, title, updated_at as timestamp, status, updated_at FROM assignments ORDER BY updated_at DESC LIMIT 5");
+    $act2 = $stmtAct2->fetchAll(PDO::FETCH_ASSOC);
+
+    $all_activity = array_merge($act1, $act2);
+    usort($all_activity, function($a, $b) {
+        return strtotime($b['updated_at']) - strtotime($a['updated_at']);
+    });
+    $stats['recent_activity'] = array_slice($all_activity, 0, 8);
+
     echo json_encode(['success' => true, 'data' => $stats]);
+    exit;
+
+} elseif ($method === 'GET' && $action === 'get_dashboard_live') {
+    $user = $_SESSION['user'];
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']);
+        exit;
+    }
+
+    $live = [];
+
+    // Critical equipment (0 units left)
+    $stmtCritEq = $db->query("
+        SELECT em.name, em.total_units, 
+               COALESCE((SELECT SUM(quantity) FROM assignment_equipment ae JOIN assignments a ON ae.assignment_id = a.id WHERE a.status IN ('PENDING', 'APPROVED') AND ae.equipment_name = em.name), 0) as borrowed
+        FROM equipment_master em
+        WHERE em.is_active = 1
+    ");
+    $criticalEq = [];
+    while ($row = $stmtCritEq->fetch(PDO::FETCH_ASSOC)) {
+        if (($row['total_units'] - $row['borrowed']) <= 0) {
+            $criticalEq[] = $row['name'];
+        }
+    }
+    $live['critical_equipment'] = $criticalEq;
+
+    // Workflow Bottlenecks
+    $live['bottleneck_reviews'] = (int)$db->query("SELECT COUNT(*) FROM stories WHERE status = 'REVIEW'")->fetchColumn();
+    $live['bottleneck_assignments'] = (int)$db->query("SELECT COUNT(*) FROM assignments WHERE status = 'PENDING'")->fetchColumn();
+
+    // Live Monitoring - Online Users
+    $stmtOnl = $db->query("SELECT u.full_name, d.name as dept_name, u.last_seen 
+                           FROM users u LEFT JOIN departments d ON u.department_id = d.id 
+                           WHERE u.last_seen > datetime('now', 'localtime', '-5 minutes') OR u.last_seen > datetime('now', '-5 minutes')
+                           ORDER BY u.last_seen DESC LIMIT 10");
+    $live['online_users'] = $stmtOnl->fetchAll(PDO::FETCH_ASSOC);
+
+    // Live Monitoring - Active Stories
+    $stmtActS = $db->query("SELECT slug as title, locked_by as editor, locked_at 
+                            FROM stories 
+                            WHERE is_deleted = 0 AND locked_by IS NOT NULL 
+                            AND locked_by != '' 
+                            AND (locked_at > datetime('now', 'localtime', '-5 minutes') OR locked_at > datetime('now', '-5 minutes'))
+                            ORDER BY locked_at DESC");
+    $live['active_stories'] = $stmtActS->fetchAll(PDO::FETCH_ASSOC);
+
+    // Live Monitoring - Active Rundowns
+    $stmtActR = $db->query("SELECT name as title, locked_by as editor, locked_at 
+                            FROM rundowns 
+                            WHERE locked_by IS NOT NULL 
+                            AND locked_by != '' 
+                            AND (locked_at > datetime('now', 'localtime', '-5 minutes') OR locked_at > datetime('now', '-5 minutes'))
+                            ORDER BY locked_at DESC");
+    $live['active_rundowns'] = $stmtActR->fetchAll(PDO::FETCH_ASSOC);
+
+    // Live Monitoring - Today's Field Assignments
+    $stmtTodayA = $db->query("SELECT a.title, a.reporter_name as assignee, at.location_name as location, at.start_time as time 
+                              FROM assignments a 
+                              JOIN assignment_trips at ON a.id = at.assignment_id 
+                              WHERE a.status = 'APPROVED' 
+                              AND (at.trip_date = date('now', 'localtime') OR at.trip_date = date('now'))
+                              ORDER BY at.start_time ASC");
+    $live['today_assignments'] = $stmtTodayA->fetchAll(PDO::FETCH_ASSOC);
+
+    echo json_encode(['success' => true, 'data' => $live]);
+    exit;
+
+    // 11. Reporter Productivity (Top 5 Authors)
+    $stmtTopRep = $db->query("
+        SELECT author_id, COUNT(*) as count 
+        FROM stories 
+        WHERE is_deleted = 0 AND author_id IS NOT NULL AND author_id != '' 
+        GROUP BY author_id 
+        ORDER BY count DESC 
+        LIMIT 5
+    ");
+    $stats['top_reporters'] = $stmtTopRep->fetchAll(PDO::FETCH_ASSOC);
+
+    // 12. Recent Activity Feed (Stories + Assignments)
+    $stmtAct1 = $db->query("SELECT 'Story' as type, slug as title, updated_at as timestamp, status, updated_at FROM stories WHERE is_deleted = 0 ORDER BY updated_at DESC LIMIT 5");
+    $act1 = $stmtAct1->fetchAll(PDO::FETCH_ASSOC);
+    
+    $stmtAct2 = $db->query("SELECT 'Assignment' as type, title, updated_at as timestamp, status, updated_at FROM assignments ORDER BY updated_at DESC LIMIT 5");
+    $act2 = $stmtAct2->fetchAll(PDO::FETCH_ASSOC);
+
+    $all_activity = array_merge($act1, $act2);
+    usort($all_activity, function($a, $b) {
+        return strtotime($b['updated_at']) - strtotime($a['updated_at']);
+    });
+    $stats['recent_activity'] = array_slice($all_activity, 0, 8);
+
+
 
 } elseif ($method === 'GET' && $action === 'get_assignments') {
     $status = $_GET['status'] ?? '';

@@ -3,6 +3,12 @@
 $user = $_SESSION['user'] ?? null;
 if (!$user) return; // fail-safe
 $active_menu = $active_menu ?? '';
+
+// Update presence heartbeat
+try {
+    $db_heartbeat = new PDO("sqlite:" . __DIR__ . '/database/newsroom.sqlite');
+    $db_heartbeat->exec("UPDATE users SET last_seen = CURRENT_TIMESTAMP WHERE employee_id = '{$user['employee_id']}'");
+} catch(Exception $e) {}
 ?>
     <!-- App Header -->
     <div class="app-header">
