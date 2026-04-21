@@ -1040,6 +1040,13 @@ if ($method === 'POST' && $action === 'save_story') {
             exit;
         }
 
+        $stmtCheck3 = $db->prepare("SELECT COUNT(*) FROM assignments WHERE department_id=?");
+        $stmtCheck3->execute([$id]);
+        if ($stmtCheck3->fetchColumn() > 0) {
+            echo json_encode(['success' => false, 'error' => 'Cannot delete: Department is assigned to existing Assignments.']);
+            exit;
+        }
+
         $stmt = $db->prepare("DELETE FROM departments WHERE id=?");
         $stmt->execute([$id]);
     }
@@ -1136,14 +1143,35 @@ if ($method === 'POST' && $action === 'save_story') {
     $stmt->execute($params);
     $assignments = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    foreach ($assignments as &$ass) {
-        $stmtT = $db->prepare("SELECT * FROM assignment_trips WHERE assignment_id = ? ORDER BY trip_date ASC, start_time ASC");
-        $stmtT->execute([$ass['id']]);
-        $ass['trips'] = $stmtT->fetchAll(PDO::FETCH_ASSOC);
+    $assIds = array_column($assignments, 'id');
+    if (!empty($assIds)) {
+        $inPart = implode(',', array_fill(0, count($assIds), '?'));
+        
+        $stmtT = $db->prepare("SELECT * FROM assignment_trips WHERE assignment_id IN ($inPart) ORDER BY trip_date ASC, start_time ASC");
+        $stmtT->execute($assIds);
+        $allTrips = $stmtT->fetchAll(PDO::FETCH_ASSOC);
+        $tripsByAss = [];
+        foreach ($allTrips as $t) {
+            $tripsByAss[$t['assignment_id']][] = $t;
+        }
 
-        $stmtE = $db->prepare("SELECT e.*, m.name FROM assignment_equipment e LEFT JOIN equipment_master m ON e.equipment_name = m.name WHERE e.assignment_id = ?");
-        $stmtE->execute([$ass['id']]);
-        $ass['equipment'] = $stmtE->fetchAll(PDO::FETCH_ASSOC);
+        $stmtE = $db->prepare("SELECT e.*, m.name FROM assignment_equipment e LEFT JOIN equipment_master m ON e.equipment_name = m.name WHERE e.assignment_id IN ($inPart)");
+        $stmtE->execute($assIds);
+        $allEq = $stmtE->fetchAll(PDO::FETCH_ASSOC);
+        $eqByAss = [];
+        foreach ($allEq as $e) {
+            $eqByAss[$e['assignment_id']][] = $e;
+        }
+
+        foreach ($assignments as &$ass) {
+            $ass['trips'] = $tripsByAss[$ass['id']] ?? [];
+            $ass['equipment'] = $eqByAss[$ass['id']] ?? [];
+        }
+    } else {
+        foreach ($assignments as &$ass) {
+            $ass['trips'] = [];
+            $ass['equipment'] = [];
+        }
     }
     echo json_encode(['success' => true, 'data' => $assignments]);
 
@@ -1249,8 +1277,10 @@ if ($method === 'POST' && $action === 'save_story') {
         $stmtU = $db->prepare("UPDATE assignments SET title=?, description=?, reporter_id=?, reporter_name=?, department_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
         $stmtU->execute([$data['title'], $data['description'] ?? '', $data['reporter_id'], $data['reporter_name'], $data['department_id'], $assignmentId]);
         
-        $db->exec("DELETE FROM assignment_trips WHERE assignment_id = $assignmentId");
-        $db->exec("DELETE FROM assignment_equipment WHERE assignment_id = $assignmentId");
+        $stmtDelTrips = $db->prepare("DELETE FROM assignment_trips WHERE assignment_id = ?");
+        $stmtDelTrips->execute([$assignmentId]);
+        $stmtDelEq = $db->prepare("DELETE FROM assignment_equipment WHERE assignment_id = ?");
+        $stmtDelEq->execute([$assignmentId]);
         
         $trips = $data['trips'] ?? [];
         if (empty($trips)) throw new Exception('At least 1 trip required.');
@@ -1387,55 +1417,6 @@ if ($method === 'POST' && $action === 'save_story') {
     $stmtC->execute([$id]);
     echo json_encode(['success' => true]);
 
-} elseif ($method === 'GET' && $action === 'get_assignments') {
-    $month = $_GET['month'] ?? ''; // YYYY-MM
-    $dept_id = $_GET['department_id'] ?? '';
-    $user = $_SESSION['user'];
-    $role_id = intval($user['role_id']);
-    $user_emp_id = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
-    $user_dept = $user['department_id'];
-
-    $where = ["a.status != 'DELETED'"];
-    $params = [];
-
-    if ($month !== '') {
-        $where[] = "EXISTS (SELECT 1 FROM assignment_trips t WHERE t.assignment_id = a.id AND t.trip_date LIKE ?)";
-        $params[] = $month . '-%';
-    }
-
-    if ($role_id == 1 || $role_id == 4) {
-        $where[] = "a.reporter_id = ?";
-        $params[] = $user_emp_id;
-    } elseif ($role_id == 2) {
-        $where[] = "a.department_id = ?";
-        $params[] = $user_dept;
-    } else {
-        if ($dept_id !== '') {
-            $where[] = "a.department_id = ?";
-            $params[] = $dept_id;
-        }
-    }
-
-    $whereStr = implode(" AND ", $where);
-    $query = "SELECT a.*, d.name as department_name,
-              (SELECT GROUP_CONCAT(equipment_name) FROM assignment_equipment e WHERE e.assignment_id = a.id) as equipment_list
-              FROM assignments a
-              LEFT JOIN departments d ON a.department_id = d.id
-              WHERE $whereStr
-              ORDER BY a.updated_at DESC";
-    $stmt = $db->prepare($query);
-    $stmt->execute($params);
-    $assignments = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    foreach($assignments as &$a) {
-        $stmtT = $db->prepare("SELECT * FROM assignment_trips WHERE assignment_id = ? ORDER BY trip_date ASC, start_time ASC LIMIT 1");
-        $stmtT->execute([$a['id']]);
-        $firstTrip = $stmtT->fetch(PDO::FETCH_ASSOC);
-        $a['first_trip_date'] = $firstTrip ? $firstTrip['trip_date'] : null;
-    }
-
-    echo json_encode(['success' => true, 'data' => $assignments]);
-
 } elseif ($method === 'GET' && $action === 'get_equipment_master_all') {
     $user = $_SESSION['user'];
     if ($user['role_id'] != 3) {
@@ -1552,10 +1533,25 @@ if ($method === 'POST' && $action === 'save_story') {
     $stmt->execute($params);
     $trips = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    foreach ($trips as &$t) {
-        $stmtEQ = $db->prepare("SELECT equipment_name FROM assignment_equipment WHERE assignment_id = ?");
-        $stmtEQ->execute([$t['assignment_id']]);
-        $t['equipment'] = $stmtEQ->fetchAll(PDO::FETCH_COLUMN); // Array of names
+    $assIds = array_unique(array_column($trips, 'assignment_id'));
+    if (!empty($assIds)) {
+        $inPart = implode(',', array_fill(0, count($assIds), '?'));
+        
+        $stmtEQ = $db->prepare("SELECT assignment_id, equipment_name FROM assignment_equipment WHERE assignment_id IN ($inPart)");
+        $stmtEQ->execute(array_values($assIds));
+        $allEq = $stmtEQ->fetchAll(PDO::FETCH_ASSOC);
+        $eqByAss = [];
+        foreach ($allEq as $e) {
+            $eqByAss[$e['assignment_id']][] = $e['equipment_name'];
+        }
+
+        foreach ($trips as &$t) {
+            $t['equipment'] = $eqByAss[$t['assignment_id']] ?? [];
+        }
+    } else {
+        foreach ($trips as &$t) {
+            $t['equipment'] = [];
+        }
     }
 
     echo json_encode(['success' => true, 'data' => $trips]);
