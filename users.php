@@ -76,8 +76,8 @@ $csrf_token = $_SESSION['csrf_token'];
     </div>
 
     <script>
-        const windowUser = <?php echo json_encode($user); ?>;
-        const csrfToken = <?php echo json_encode($csrf_token); ?>;
+        const windowUser = <?php echo json_encode($user, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+        const csrfToken = <?php echo json_encode($csrf_token, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
         let rolesCache = [];
         let departmentsCache = [];
 

@@ -15,6 +15,21 @@ if (!$ass) {
     die("Assignment not found.");
 }
 
+$user = $_SESSION['user'];
+$role_id = intval($user['role_id']);
+$user_emp_id = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
+
+if ($role_id == 1 || $role_id == 4) {
+    if ($ass['reporter_id'] !== $user_emp_id && $ass['created_by'] !== $user_emp_id) {
+        die("Unauthorized to print this assignment.");
+    }
+} elseif ($role_id == 2) {
+    if ($ass['department_id'] != $user['department_id']) {
+        die("Unauthorized to print this assignment.");
+    }
+}
+
+
 $stmtT = $db->prepare("SELECT * FROM assignment_trips WHERE assignment_id = ? ORDER BY trip_date ASC, start_time ASC");
 $stmtT->execute([$id]);
 $trips = $stmtT->fetchAll(PDO::FETCH_ASSOC);

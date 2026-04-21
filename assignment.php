@@ -217,11 +217,11 @@ $csrf_token = $_SESSION['csrf_token'];
 
     <script>
         window.ASSIGNMENT_ENV = {
-            csrfToken: <?php echo json_encode($csrf_token); ?>,
-            roleId: <?php echo $user['role_id']; ?>,
-            employeeId: <?php echo json_encode($user['employee_id'] ?? $user['id'] ?? $user['full_name']); ?>,
-            fullName: <?php echo json_encode($user['full_name']); ?>,
-            departmentId: <?php echo $user['department_id']; ?>
+            csrfToken: <?php echo json_encode($csrf_token, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>,
+            roleId: <?php echo json_encode((int)$user['role_id']); ?>,
+            employeeId: <?php echo json_encode($user['employee_id'] ?? $user['id'] ?? $user['full_name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>,
+            fullName: <?php echo json_encode($user['full_name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>,
+            departmentId: <?php echo json_encode((int)$user['department_id']); ?>
         };
     </script>
     <script type="module" src="js/assignment.js?v=1"></script>

@@ -44,7 +44,7 @@ $active_menu = $active_menu ?? '';
         </div>
         <div class="user-info-bar" style="display: flex; align-items: center; gap: 12px;">
             <div class="user-avatar" style="width: 32px; height: 32px; background: #333; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #fff;">
-                <?php echo mb_substr($user['full_name'], 0, 1, 'UTF-8'); ?>
+                <?php echo htmlspecialchars(mb_substr($user['full_name'], 0, 1, 'UTF-8')); ?>
             </div>
             <div class="user-details" style="display: flex; flex-direction: column;">
                 <div class="user-name" style="font-size: 14px; font-weight: 600; color: #fff;"><?php echo htmlspecialchars($user['full_name']); ?></div>

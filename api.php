@@ -1182,6 +1182,19 @@ if ($method === 'POST' && $action === 'save_story') {
     $ass = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if ($ass) {
+        $user = $_SESSION['user'];
+        $role_id = intval($user['role_id']);
+        $user_emp_id = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
+        if ($role_id == 1 || $role_id == 4) {
+            if ($ass['reporter_id'] !== $user_emp_id && $ass['created_by'] !== $user_emp_id) {
+                echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
+            }
+        } elseif ($role_id == 2) {
+            if ($ass['department_id'] != $user['department_id']) {
+                echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
+            }
+        }
+
         $stmtT = $db->prepare("SELECT * FROM assignment_trips WHERE assignment_id = ? ORDER BY trip_date ASC, start_time ASC");
         $stmtT->execute([$id]);
         $ass['trips'] = $stmtT->fetchAll(PDO::FETCH_ASSOC);
@@ -1206,6 +1219,9 @@ if ($method === 'POST' && $action === 'save_story') {
     $user_dept = $user['department_id'];
 
     $title = trim($data['title'] ?? '');
+    if (empty($title)) {
+        echo json_encode(['success' => false, 'error' => 'Title is required.']); exit;
+    }
     $reporter_id = $data['reporter_id'] ?? '';
     
     if ($role_id == 1 || $role_id == 4) {
@@ -1228,6 +1244,9 @@ if ($method === 'POST' && $action === 'save_story') {
         if (empty($trips)) throw new Exception('At least 1 trip required.');
         $stmtT = $db->prepare("INSERT INTO assignment_trips (assignment_id, trip_date, start_time, end_time, location_name, location_detail, order_index) VALUES (?, ?, ?, ?, ?, ?, ?)");
         foreach ($trips as $i => $t) {
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $t['trip_date']) || !preg_match('/^(?:2[0-3]|[01][0-9]):[0-5][0-9]$/', $t['start_time'])) {
+                throw new Exception("Invalid date or time format.");
+            }
             $stmtT->execute([$assignmentId, $t['trip_date'], $t['start_time'], $t['end_time'] ?? null, $t['location_name'] ?? '', $t['location_detail'] ?? '', $i]);
         }
 
@@ -1274,8 +1293,10 @@ if ($method === 'POST' && $action === 'save_story') {
 
     $db->beginTransaction();
     try {
+        $title = trim($data['title'] ?? '');
+        if (empty($title)) throw new Exception('Title is required.');
         $stmtU = $db->prepare("UPDATE assignments SET title=?, description=?, reporter_id=?, reporter_name=?, department_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
-        $stmtU->execute([$data['title'], $data['description'] ?? '', $data['reporter_id'], $data['reporter_name'], $data['department_id'], $assignmentId]);
+        $stmtU->execute([$title, $data['description'] ?? '', $data['reporter_id'], $data['reporter_name'], $data['department_id'], $assignmentId]);
         
         $stmtDelTrips = $db->prepare("DELETE FROM assignment_trips WHERE assignment_id = ?");
         $stmtDelTrips->execute([$assignmentId]);
@@ -1286,6 +1307,9 @@ if ($method === 'POST' && $action === 'save_story') {
         if (empty($trips)) throw new Exception('At least 1 trip required.');
         $stmtT = $db->prepare("INSERT INTO assignment_trips (assignment_id, trip_date, start_time, end_time, location_name, location_detail, order_index) VALUES (?, ?, ?, ?, ?, ?, ?)");
         foreach ($trips as $i => $t) {
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $t['trip_date']) || !preg_match('/^(?:2[0-3]|[01][0-9]):[0-5][0-9]$/', $t['start_time'])) {
+                throw new Exception("Invalid date or time format.");
+            }
             $stmtT->execute([$assignmentId, $t['trip_date'], $t['start_time'], $t['end_time'] ?? null, $t['location_name'] ?? '', $t['location_detail'] ?? '', $i]);
         }
 
@@ -1347,6 +1371,9 @@ if ($method === 'POST' && $action === 'save_story') {
     $stmt = $db->prepare("SELECT * FROM assignments WHERE id = ?");
     $stmt->execute([$id]);
     $ass = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$ass) {
+        echo json_encode(['success' => false, 'error' => 'Assignment not found']); exit;
+    }
     if ($role_id == 2 && $ass['department_id'] != $user['department_id']) {
         echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
     }
@@ -1377,6 +1404,9 @@ if ($method === 'POST' && $action === 'save_story') {
     $stmt = $db->prepare("SELECT * FROM assignments WHERE id = ?");
     $stmt->execute([$id]);
     $ass = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$ass) {
+        echo json_encode(['success' => false, 'error' => 'Assignment not found']); exit;
+    }
     if ($role_id == 2 && $ass['department_id'] != $user['department_id']) {
         echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
     }
@@ -1399,6 +1429,10 @@ if ($method === 'POST' && $action === 'save_story') {
     $stmt->execute([$id]);
     $ass = $stmt->fetch(PDO::FETCH_ASSOC);
     
+    if (!$ass) {
+        echo json_encode(['success' => false, 'error' => 'Assignment not found']); exit;
+    }
+
     if ($role_id == 1 || $role_id == 4) {
         if ($ass['reporter_id'] !== $user_emp_id) {
             echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
@@ -1512,9 +1546,15 @@ if ($method === 'POST' && $action === 'save_story') {
     $role_id = intval($user['role_id']);
     $user_emp_id = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
     $user_dept = $user['department_id'];
+    $fDept = $_GET['department_id'] ?? '';
 
     $where = ["a.status != 'DELETED'", "t.trip_date LIKE ?"];
     $params = [$month . '-%'];
+
+    if ($fDept) {
+        $where[] = "a.department_id = ?";
+        $params[] = $fDept;
+    }
 
     if ($role_id == 1 || $role_id == 4) {
         $where[] = "a.reporter_id = ?";
@@ -1525,7 +1565,7 @@ if ($method === 'POST' && $action === 'save_story') {
     }
 
     $whereStr = implode(" AND ", $where);
-    $sql = "SELECT t.trip_date as date, a.id as assignment_id, a.title, a.status, a.reporter_name, t.location_name
+    $sql = "SELECT t.trip_date as date, a.id as assignment_id, a.title, a.status, a.reporter_name, t.location_name, a.department_id
             FROM assignment_trips t
             JOIN assignments a ON t.assignment_id = a.id
             WHERE $whereStr";

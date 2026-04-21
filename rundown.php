@@ -265,8 +265,8 @@ $csrf_token = $_SESSION['csrf_token'];
 
     <script>
         window.RUNDOWN_ENV = {
-            csrfToken: <?php echo json_encode($csrf_token); ?>,
-            roleId: <?php echo $user['role_id']; ?>
+            csrfToken: <?php echo json_encode($csrf_token, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>,
+            roleId: <?php echo json_encode((int)$user['role_id']); ?>
         };
     </script>
     <script src="js/rundown.js?v=2"></script>

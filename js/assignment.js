@@ -82,11 +82,14 @@ function switchTab(tab) {
 }
 
 async function apiCall(action, data = null, method = 'GET') {
-    const url = `api.php?action=${action}`;
+    let url = `api.php?action=${action}`;
     const options = { method };
     if (method === 'POST') {
         options.headers = { 'Content-Type': 'application/json' };
         options.body = JSON.stringify({ ...data, csrf_token: ENV.csrfToken });
+    } else if (data && method === 'GET') {
+        const params = new URLSearchParams(data);
+        url += `&${params.toString()}`;
     }
     const res = await fetch(url, options);
     const result = await res.json();
@@ -118,7 +121,9 @@ async function fetchInitialData() {
             d.setMonth(d.getMonth() + i);
             let val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, '0')}`;
             let lbl = `${mNames[d.getMonth()]} ${d.getFullYear() + 543}`;
-            ui.listFilterMonth.add(new Option(lbl, val));
+            let opt = new Option(lbl, val);
+            if (val === currentMonthStr) opt.selected = true;
+            ui.listFilterMonth.add(opt);
         }
 
     } catch (e) {
@@ -151,7 +156,8 @@ async function loadCalendarData() {
     ui.calMonthYear.textContent = `${mNames[currentDate.getMonth()]} ${currentDate.getFullYear() + 543}`;
 
     try {
-        const res = await apiCall(`get_calendar_data&month=${currentMonthStr}`);
+        const fDept = ui.calFilterDept.value || '';
+        const res = await apiCall('get_calendar_data', { month: currentMonthStr, department_id: fDept });
         calendarData = res.data;
         renderCalendar();
     } catch (e) {
@@ -231,7 +237,7 @@ async function loadEqSummary(date) {
     ui.eqSummaryDate.textContent = `วันที่ ${date}`;
     ui.eqSummaryContent.innerHTML = 'Loading...';
     try {
-        const res = await apiCall(`get_equipment_conflicts&date=${date}`);
+        const res = await apiCall('get_equipment_conflicts', { date });
         const data = res.data;
         if (data.length === 0) {
             ui.eqSummaryContent.innerHTML = 'ไม่มีอุปกรณ์ถูกใช้งาน';
@@ -256,10 +262,10 @@ async function loadListData() {
     
     const fStatus = currentListStatus;
     const fDept = ui.listFilterDept.value || '';
-    const fMonth = ui.listFilterMonth.value || currentMonthStr; // default to current month if empty
+    const fMonth = ui.listFilterMonth.value; // Allow empty string for All
 
     try {
-        const res = await apiCall(`get_assignments&status=${fStatus}&department_id=${fDept}&month=${fMonth}`);
+        const res = await apiCall('get_assignments', { status: fStatus, department_id: fDept, month: fMonth });
         assignmentsData = res.data;
         
         // Update quick filter counts (we should ideally get counts for all from backend without filter)
@@ -354,7 +360,7 @@ window.deleteAssignment = async (id) => {
 window.openDetailModal = async (id, e) => {
     if (e) e.stopPropagation();
     try {
-        const res = await apiCall(`get_assignment_detail&id=${id}`);
+        const res = await apiCall('get_assignment_detail', { id });
         const a = res.data;
         const isManager = ENV.roleId == 2 || ENV.roleId == 3;
         const isPending = a.status === 'PENDING';
@@ -406,16 +412,16 @@ window.openDetailModal = async (id, e) => {
             `;
         }
         if ((ENV.roleId == 1 || ENV.roleId == 4) && a.created_by == ENV.employeeId && isApproved) {
-             actionHtml = `<button onclick="Swal.close(); completeAssignment(${id})" style="background:#2196F3;color:#fff;border:none;padding:10px 16px;border-radius:6px;cursor:pointer;">✅ หมายเสร็จสิ้น</button>`;
+             actionHtml += `<button onclick="Swal.close(); completeAssignment(${id})" style="background:#2196F3;color:#fff;border:none;padding:10px 16px;border-radius:6px;cursor:pointer;">✅ หมายเสร็จสิ้น</button>`;
         }
         if (isManager && isApproved) {
-            actionHtml = `<button onclick="Swal.close(); completeAssignment(${id})" style="background:#2196F3;color:#fff;border:none;padding:10px 16px;border-radius:6px;cursor:pointer;">✅ เคลียร์เสร็จสิ้น</button>`;
+            actionHtml += `<button onclick="Swal.close(); completeAssignment(${id})" style="background:#2196F3;color:#fff;border:none;padding:10px 16px;border-radius:6px;cursor:pointer;">✅ เคลียร์เสร็จสิ้น</button>`;
         }
 
         actionHtml += `<a href="print_assignment.php?id=${id}" target="_blank" style="background:#555;color:#fff;border:none;padding:10px 16px;border-radius:6px;cursor:pointer;text-decoration:none;"><i class="fa-solid fa-print"></i> พิมพ์</a>`;
 
         Swal.fire({
-            title: `[${a.status}] ${escapeHTML(a.title)}`,
+            title: `[${escapeHTML(a.status)}] ${escapeHTML(a.title)}`,
             html: content,
             width: 700,
             showConfirmButton: false,
@@ -473,7 +479,7 @@ window.openAssignmentModal = async (id = null) => {
     
     if (id) {
         try {
-            const res = await apiCall(`get_assignment_detail&id=${id}`);
+            const res = await apiCall('get_assignment_detail', { id });
             a = res.data;
         } catch(e) { return Swal.fire('Error', e.message, 'error'); }
     } else {
@@ -619,12 +625,27 @@ window.openAssignmentModal = async (id = null) => {
     });
 };
 
+window.syncTrips = () => {
+    tempTrips.forEach((t, index) => {
+        let existingNode = document.getElementById(`trip-r-${index}`);
+        if(existingNode) {
+            t.trip_date = existingNode.querySelector('.t-date').value;
+            t.start_time = existingNode.querySelector('.t-start').value;
+            t.end_time = existingNode.querySelector('.t-end').value;
+            t.location_name = existingNode.querySelector('.t-loc').value;
+            t.location_detail = existingNode.querySelector('.t-det').value;
+        }
+    });
+};
+
 window.addTripRow = () => {
+    window.syncTrips();
     tempTrips.push({ id: Date.now(), trip_date: '', start_time: '', end_time: '', location_name: '', location_detail: '' });
     window.renderTrips();
 };
 
 window.removeTripRow = (index) => {
+    window.syncTrips();
     tempTrips.splice(index, 1);
     window.renderTrips();
 };
@@ -634,15 +655,6 @@ window.renderTrips = () => {
     if(!cont) return;
     let html = '';
     tempTrips.forEach((t, index) => {
-        // sync back values before re-rendering so we don't lose typed data if adding a new row
-        let existingNode = document.getElementById(`trip-r-${index}`);
-        if(existingNode) {
-            t.trip_date = existingNode.querySelector('.t-date').value;
-            t.start_time = existingNode.querySelector('.t-start').value;
-            t.end_time = existingNode.querySelector('.t-end').value;
-            t.location_name = existingNode.querySelector('.t-loc').value;
-            t.location_detail = existingNode.querySelector('.t-det').value;
-        }
 
         html += `
             <div class="trip-row t-row" id="trip-r-${index}">
