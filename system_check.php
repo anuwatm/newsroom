@@ -60,8 +60,16 @@ $checks = [
         'fix_action' => 'fix_dir_data',
         'manual_fix' => 'สร้างโฟลเดอร์ <code>data/stories</code> และตั้งค่าสิทธิ์ให้สามารถเขียนได้ (chmod -R 777 data)'
     ],
+    'dir_data_log' => [
+        'name' => '6. ไดเร็กทอรี: /data/log',
+        'description' => 'โฟลเดอร์เก็บประวัติ Audit Logs (ประเมินสิทธิ์การเขียนและไฟล์ป้องกัน .htaccess)',
+        'status' => is_dir(__DIR__ . '/data/log') && is_writable(__DIR__ . '/data/log') && file_exists(__DIR__ . '/data/log/.htaccess'),
+        'fixable' => true,
+        'fix_action' => 'fix_dir_log',
+        'manual_fix' => 'สร้างโฟลเดอร์ <code>data/log</code> (chmod -R 777) และสร้างไฟล์ <code>.htaccess</code> ด้านในที่มีค่า <code>Deny from all</code>'
+    ],
     'db_sqlite' => [
-        'name' => '6. ฐานข้อมูล: newsroom.sqlite',
+        'name' => '7. ฐานข้อมูล: newsroom.sqlite',
         'description' => 'ไฟล์ฐานข้อมูลหลักของระบบ และตารางข้อมูลเริ่มต้น (Seed Data)',
         'status' => file_exists($dbFile),
         'fixable' => true,
@@ -69,7 +77,7 @@ $checks = [
         'manual_fix' => 'ต้องสร้างไฟล์ฐานข้อมูลโดยใช้ปุ่ม Auto Fix เพื่อ generate ไฟล์'
     ],
     'db_tables' => [
-        'name' => '7. ตารางในฐานข้อมูล (Tables)',
+        'name' => '8. ตารางในฐานข้อมูล (Tables)',
         'description' => 'ตรวจสอบตารางข้อมูลที่จำเป็น (' . implode(', ', $missingTables ?: ['Complete']) . ')',
         'status' => empty($missingTables) && file_exists($dbFile),
         'fixable' => true,
@@ -98,6 +106,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if (!is_dir($path2)) @mkdir($path2, 0755, true);
             if (!is_writable($path2)) { @chmod($path1, 0777); @chmod($path2, 0777); }
             $response = ['success' => is_writable($path2), 'message' => is_writable($path2) ? 'แก้ไขสำเร็จ' : 'แก้ไขไม่สำเร็จ เกิดปัญหา Permission Denied โปรดแก้ด้วยตนเอง'];
+        } 
+        elseif ($action === 'fix_dir_log') {
+            $path1 = __DIR__ . '/data';
+            $path2 = __DIR__ . '/data/log';
+            $htaccess = $path2 . '/.htaccess';
+            if (!is_dir($path1)) @mkdir($path1, 0755, true);
+            if (!is_dir($path2)) @mkdir($path2, 0755, true);
+            if (!is_writable($path2)) { @chmod($path1, 0777); @chmod($path2, 0777); }
+            if (is_dir($path2) && !file_exists($htaccess)) {
+                @file_put_contents($htaccess, "Order Deny,Allow\nDeny from all");
+            }
+            $success = is_writable($path2) && file_exists($htaccess);
+            $response = ['success' => $success, 'message' => $success ? 'สร้างโฟลเดอร์ Log และระบบป้องกันสำเร็จ' : 'แก้ไขไม่สำเร็จ กรุณาเช็ค Permission ด้วยตนเอง'];
         } 
         elseif ($action === 'fix_db_init') {
             ob_start();

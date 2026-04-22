@@ -252,7 +252,9 @@ function renderBoard(data) {
         const upDate = new Date(story.updated_at);
         const upStr = `${upDate.getHours().toString().padStart(2, '0')}:${upDate.getMinutes().toString().padStart(2, '0')}`;
         
-        const fBadge = `<span class="format-badge format-${story.format || 'OC'}">${story.format || 'OC'}</span>`;
+        const safeFormat = escapeHTML(story.format || 'OC');
+        const safeFormatClass = (story.format || 'OC').replace(/[^a-zA-Z0-9_-]/g, "");
+        const fBadge = `<span class="format-badge format-${safeFormatClass}">${safeFormat}</span>`;
         const actionBtn = story.is_dropped == 1 ? 
             `<button class="btn-outline toggle-drop" data-id="${story.rundown_story_id}" data-val="0" title="Restore" style="border:none;"><i class="fa-solid fa-rotate-left"></i></button>` :
             `<button class="btn-outline toggle-drop" data-id="${story.rundown_story_id}" data-val="1" title="Drop Story" style="border:none; color:#f44336;"><i class="fa-solid fa-ban"></i></button>`;

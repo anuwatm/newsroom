@@ -4,6 +4,8 @@
  * Initializes the SQLite database and creates setup schema.
  */
 
+require_once __DIR__ . '/logger.php';
+
 $dbDir = __DIR__ . '/database';
 if (!is_dir($dbDir)) {
     mkdir($dbDir, 0755, true);

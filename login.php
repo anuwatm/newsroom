@@ -9,7 +9,20 @@ if (isset($_SESSION['user'])) {
 
 $error = '';
 
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
+// Brute Force Protection
+$max_attempts = 5;
+$lockout_time = 300; // 5 minutes
+
+if (isset($_SESSION['login_attempts']) && $_SESSION['login_attempts'] >= $max_attempts) {
+    if (time() - $_SESSION['last_login_attempt'] < $lockout_time) {
+        $remaining = ceil(($lockout_time - (time() - $_SESSION['last_login_attempt'])) / 60);
+        $error = "คุณเข้าระบบผิดพลาดเกิน $max_attempts ครั้ง กรุณารอสักครู่ $remaining นาที แล้วลองใหม่";
+    } else {
+        $_SESSION['login_attempts'] = 0;
+    }
+}
+
+if ($_SERVER["REQUEST_METHOD"] == "POST" && empty($error)) {
     $emp_id = trim($_POST['employee_id'] ?? '');
     $password = $_POST['password'] ?? '';
 
@@ -28,6 +41,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
         if ($user && password_verify($password, $user['password'])) {
             // Login success
+            $_SESSION['login_attempts'] = 0;
             session_regenerate_id(true);
             $_SESSION['user'] = [
                 'employee_id' => $user['employee_id'],
@@ -37,9 +51,21 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 'department_id' => $user['department_id'],
                 'department_name' => $user['department_name']
             ];
+            
+            write_log('LOGIN_SUCCESS', "Logged in successfully to Role: " . $user['role_name']);
+
             header("Location: index.php");
             exit;
         } else {
+            $_SESSION['login_attempts'] = ($_SESSION['login_attempts'] ?? 0) + 1;
+            $_SESSION['last_login_attempt'] = time();
+            
+            if ($_SESSION['login_attempts'] >= $max_attempts) {
+                write_log('LOGIN_LOCKOUT', "IP blocked due to $max_attempts failed attempts for user: {$emp_id}", 'WARNING');
+            } else {
+                write_log('LOGIN_FAILED', "Failed attempt ({$_SESSION['login_attempts']}/$max_attempts) for user: {$emp_id}", 'WARNING');
+            }
+
             $error = "รหัสพนักงานหรือรหัสผ่านไม่ถูกต้อง";
         }
     }

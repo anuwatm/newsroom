@@ -7,17 +7,10 @@
 require_once 'db.php';
 header('Content-Type: application/json');
 
-// Ensure data directory exists
+// Data directory check
 $dataDir = __DIR__ . '/data/stories';
 if (!is_dir($dataDir)) {
     mkdir($dataDir, 0755, true);
-}
-
-// Global Presence Heartbeat
-if (isset($_SESSION['user'])) {
-    try {
-        $db->exec("UPDATE users SET last_seen = CURRENT_TIMESTAMP WHERE employee_id = '{$_SESSION['user']['employee_id']}'");
-    } catch(Exception $e) {}
 }
 
 // Ensure migrations for new columns
@@ -170,6 +163,12 @@ if (!isset($_SESSION['user'])) {
     exit;
 }
 
+// Global Presence Heartbeat
+try {
+    $stmtHeartbeat = $db->prepare("UPDATE users SET last_seen = CURRENT_TIMESTAMP WHERE employee_id = ?");
+    $stmtHeartbeat->execute([$_SESSION['user']['employee_id']]);
+} catch(Exception $e) {}
+
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
 
@@ -294,6 +293,9 @@ if ($method === 'POST' && $action === 'save_story') {
         }
 
         $db->commit();
+        if (!$is_autosave) {
+            write_log('SAVE_STORY', "Saved story ID: {$storyId} (Slug: " . ($meta['slug'] ?? 'Unknown') . ")");
+        }
         echo json_encode(['success' => true, 'story_id' => $storyId]);
     } catch (Exception $e) {
         $db->rollBack();
@@ -555,6 +557,7 @@ if ($method === 'POST' && $action === 'save_story') {
     $stmt->execute([$storyId, $authorId]);
     
     if ($stmt->rowCount() > 0) {
+        write_log('MOVE_TO_BIN', "Moved story ID {$storyId} to bin");
         echo json_encode(['success' => true]);
     } else {
         echo json_encode(['success' => false, 'error' => 'Could not delete story. It may not belong to you or is not a DRAFT.']);
@@ -604,6 +607,7 @@ if ($method === 'POST' && $action === 'save_story') {
         }
     }
     
+    write_log('CREATE_RUNDOWN', "Created rundown ID: {$rundownId} ({$name})");
     echo json_encode(['success' => true, 'id' => $rundownId]);
 
 } elseif ($method === 'GET' && $action === 'get_rundowns') {
@@ -711,6 +715,7 @@ if ($method === 'POST' && $action === 'save_story') {
     $stmt = $db->prepare("INSERT INTO rundown_stories (rundown_id, story_id, order_index) VALUES (?, ?, ?)");
     $stmt->execute([$rundownId, $storyId, $maxOrder]);
     
+    write_log('ADD_RUNDOWN_STORY', "Added story ID {$storyId} into rundown ID {$rundownId} at pos {$maxOrder}");
     echo json_encode(['success' => true]);
 
 } elseif ($method === 'POST' && $action === 'add_rundown_break') {
@@ -755,6 +760,7 @@ if ($method === 'POST' && $action === 'save_story') {
     $stmt = $db->prepare("INSERT INTO rundown_stories (rundown_id, story_id, order_index, is_break, break_duration) VALUES (?, ?, ?, 1, ?)");
     $stmt->execute([$rundownId, $breakStoryId, $maxOrder, $duration]);
     
+    write_log('ADD_RUNDOWN_BREAK', "Injected {$duration}s break into rundown ID {$rundownId}");
     echo json_encode(['success' => true]);
 
 } elseif ($method === 'POST' && $action === 'update_rundown_order') {
@@ -793,6 +799,8 @@ if ($method === 'POST' && $action === 'save_story') {
         }
         $db->commit();
     }
+    $itemCount = count($ids);
+    write_log('UPDATE_RUNDOWN_ORDER', "Re-arranged and saved order layout for {$itemCount} items in rundown ID {$rundownId}");
     echo json_encode(['success' => true]);
 
 } elseif ($method === 'POST' && $action === 'toggle_rundown_story_drop') {
@@ -822,6 +830,7 @@ if ($method === 'POST' && $action === 'save_story') {
         $stmt = $db->prepare("UPDATE rundown_stories SET is_dropped=? WHERE id=?");
         $stmt->execute([$isDropped, $rsId]);
     }
+    write_log('TOGGLE_DROP_STORY', "Toggled drop status for rundown_story ID {$rsId} to {$isDropped}");
     echo json_encode(['success' => true]);
 
 } elseif ($method === 'POST' && $action === 'toggle_lock_rundown') {
@@ -844,6 +853,8 @@ if ($method === 'POST' && $action === 'save_story') {
         $stmt = $db->prepare("UPDATE rundowns SET is_locked=? WHERE id=?");
         $stmt->execute([$isLocked, $rundownId]);
     }
+    $statusText = $isLocked ? 'LOCKED' : 'UNLOCKED';
+    write_log('TOGGLE_LOCK_RUNDOWN', "{$statusText} rundown ID {$rundownId}");
     echo json_encode(['success' => true]);
 
 } elseif ($method === 'GET' && $action === 'get_programs') {
@@ -880,6 +891,7 @@ if ($method === 'POST' && $action === 'save_story') {
         $stmt = $db->prepare("INSERT INTO programs (name, duration, break_count) VALUES (?, ?, ?)");
         $stmt->execute([$name, $duration, $breakCount]);
     }
+    write_log('SAVE_PROGRAM', "Saved master program config: {$name}");
     echo json_encode(['success' => true]);
 
 } elseif ($method === 'POST' && $action === 'delete_program') {
@@ -900,6 +912,7 @@ if ($method === 'POST' && $action === 'save_story') {
         $stmt = $db->prepare("DELETE FROM programs WHERE id=?");
         $stmt->execute([$id]);
     }
+    write_log('DELETE_PROGRAM', "Deleted master program ID {$id}");
     echo json_encode(['success' => true]);
 
 } elseif ($method === 'GET' && $action === 'get_all_users') {
@@ -971,6 +984,7 @@ if ($method === 'POST' && $action === 'save_story') {
         $stmt = $db->prepare("INSERT INTO users (employee_id, full_name, password, role_id, department_id) VALUES (?, ?, ?, ?, ?)");
         $stmt->execute([$employee_id, $full_name, $hashed, $role_id, $department_id]);
     }
+    write_log('SAVE_USER', "Configured user account mapping for employee ID: {$employee_id}");
     echo json_encode(['success' => true]);
 
 } elseif ($method === 'POST' && $action === 'delete_user') {
@@ -995,6 +1009,7 @@ if ($method === 'POST' && $action === 'save_story') {
         $stmt = $db->prepare("DELETE FROM users WHERE employee_id=?");
         $stmt->execute([$employee_id]);
     }
+    write_log('DELETE_USER', "Deleted user account mapping for employee ID: {$employee_id}");
     echo json_encode(['success' => true]);
 
 } elseif ($method === 'POST' && $action === 'save_department') {
@@ -1033,6 +1048,7 @@ if ($method === 'POST' && $action === 'save_story') {
         $stmt = $db->prepare("INSERT INTO departments (name) VALUES (?)");
         $stmt->execute([$name]);
     }
+    write_log('SAVE_DEPARTMENT', "Saved configuration for department: {$name}");
     echo json_encode(['success' => true]);
 
 } elseif ($method === 'POST' && $action === 'delete_department') {
@@ -1075,6 +1091,7 @@ if ($method === 'POST' && $action === 'save_story') {
         $stmt = $db->prepare("DELETE FROM departments WHERE id=?");
         $stmt->execute([$id]);
     }
+    write_log('DELETE_DEPARTMENT', "Deleted department ID: {$id}");
     echo json_encode(['success' => true]);
 
 } elseif ($method === 'GET' && $action === 'get_dashboard_stats') {
@@ -1292,8 +1309,7 @@ if ($method === 'POST' && $action === 'save_story') {
         $where[] = "a.reporter_id = ?";
         $params[] = $user_emp_id;
     } elseif ($role_id == 2) {
-        $where[] = "a.department_id = ?";
-        $params[] = $user_dept;
+        $dept = $user_dept; // Force scope to user's assigned department
     }
     
     if ($status) {
@@ -1430,6 +1446,7 @@ if ($method === 'POST' && $action === 'save_story') {
             }
         }
         $db->commit();
+        write_log('CREATE_ASSIGNMENT', "Created assignment ID {$assignmentId} ({$title})");
         echo json_encode(['success' => true, 'id' => $assignmentId]);
     } catch (Exception $e) {
         $db->rollBack();
@@ -1493,6 +1510,7 @@ if ($method === 'POST' && $action === 'save_story') {
             }
         }
         $db->commit();
+        write_log('UPDATE_ASSIGNMENT', "Updated assignment ID {$assignmentId} ({$title})");
         echo json_encode(['success' => true]);
     } catch (Exception $e) {
         $db->rollBack();
@@ -1525,6 +1543,7 @@ if ($method === 'POST' && $action === 'save_story') {
     
     $stmtDel = $db->prepare("UPDATE assignments SET status='DELETED' WHERE id=?");
     $stmtDel->execute([$id]);
+    write_log('DELETE_ASSIGNMENT', "Marked assignment ID {$id} as DELETED");
     echo json_encode(['success' => true]);
 
 } elseif ($method === 'POST' && $action === 'approve_assignment') {
@@ -1555,6 +1574,7 @@ if ($method === 'POST' && $action === 'save_story') {
     
     $stmtA = $db->prepare("UPDATE assignments SET status='APPROVED', approved_by=?, approved_at=CURRENT_TIMESTAMP WHERE id=?");
     $stmtA->execute([$user['employee_id'] ?? $user['id'] ?? $user['full_name'], $id]);
+    write_log('APPROVE_ASSIGNMENT', "Approved assignment ID {$id}");
     echo json_encode(['success' => true]);
 
 } elseif ($method === 'POST' && $action === 'reject_assignment') {
@@ -1585,6 +1605,7 @@ if ($method === 'POST' && $action === 'save_story') {
     
     $stmtA = $db->prepare("UPDATE assignments SET status='REJECTED', rejection_note=? WHERE id=?");
     $stmtA->execute([$note, $id]);
+    write_log('REJECT_ASSIGNMENT', "Rejected assignment ID {$id}");
     echo json_encode(['success' => true]);
 
 } elseif ($method === 'POST' && $action === 'complete_assignment') {
@@ -1621,6 +1642,7 @@ if ($method === 'POST' && $action === 'save_story') {
     
     $stmtC = $db->prepare("UPDATE assignments SET status='COMPLETED' WHERE id=?");
     $stmtC->execute([$id]);
+    write_log('COMPLETE_ASSIGNMENT', "Completed assignment ID {$id}");
     echo json_encode(['success' => true]);
 
 } elseif ($method === 'GET' && $action === 'get_equipment_master_all') {
@@ -1658,6 +1680,7 @@ if ($method === 'POST' && $action === 'save_story') {
             $stmt = $db->prepare("INSERT INTO equipment_master (name, category, total_units, is_active) VALUES (?, ?, ?, ?)");
             $stmt->execute([$name, $cat, $qty, $active]);
         }
+        write_log('SAVE_EQUIPMENT', "Saved equipment entry: {$name}");
         echo json_encode(['success' => true]);
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'error' => 'Duplicate item name or server error']);
@@ -1685,6 +1708,7 @@ if ($method === 'POST' && $action === 'save_story') {
             }
             $stmtDel = $db->prepare("DELETE FROM equipment_master WHERE id = ?");
             $stmtDel->execute([$id]);
+            write_log('DELETE_EQUIPMENT', "Deleted equipment ID {$id} ({$name})");
             echo json_encode(['success' => true]);
         } else {
             echo json_encode(['success' => true]);
@@ -1723,6 +1747,10 @@ if ($method === 'POST' && $action === 'save_story') {
     $where = ["a.status != 'DELETED'", "t.trip_date LIKE ?"];
     $params = [$month . '-%'];
 
+    if ($role_id == 2) {
+        $fDept = $user_dept; // Force scope to user's assigned department
+    }
+
     if ($fDept) {
         $where[] = "a.department_id = ?";
         $params[] = $fDept;
@@ -1731,9 +1759,6 @@ if ($method === 'POST' && $action === 'save_story') {
     if ($role_id == 1 || $role_id == 4) {
         $where[] = "a.reporter_id = ?";
         $params[] = $user_emp_id;
-    } elseif ($role_id == 2) {
-        $where[] = "a.department_id = ?";
-        $params[] = $user_dept;
     }
 
     $whereStr = implode(" AND ", $where);
@@ -1786,6 +1811,64 @@ if ($method === 'POST' && $action === 'save_story') {
         echo json_encode(['success' => true, 'count' => 0]); exit;
     }
     echo json_encode(['success' => true, 'count' => $stmt->fetchColumn()]);
+
+} elseif ($method === 'GET' && $action === 'get_log_files') {
+    $user = $_SESSION['user'];
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
+    }
+    $log_dir = __DIR__ . '/data/log';
+    $files = [];
+    if (is_dir($log_dir)) {
+        $found = glob($log_dir . '/*.log');
+        foreach ($found as $filepath) {
+            $files[] = basename($filepath);
+        }
+    }
+    rsort($files); // newest first
+    echo json_encode(['success' => true, 'data' => $files]);
+
+} elseif ($method === 'GET' && $action === 'get_log_content') {
+    $user = $_SESSION['user'];
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
+    }
+    $filename = $_GET['file'] ?? '';
+    // Security check to prevent directory traversal
+    if (empty($filename) || preg_match('/[^a-zA-Z0-9_\-\.]/', $filename) || strpos($filename, '..') !== false) {
+        echo json_encode(['success' => false, 'error' => 'Invalid filename']); exit;
+    }
+    
+    $filepath = __DIR__ . '/data/log/' . $filename;
+    if (!file_exists($filepath)) {
+        echo json_encode(['success' => false, 'error' => 'File not found']); exit;
+    }
+
+    $lines = file($filepath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    $parsed_logs = [];
+    foreach ($lines as $line) {
+        if (preg_match('/^\[(.*?)\] \[(.*?)\] \[(.*?)\] \[(.*?)\] \[(.*?)\] (.*)$/', $line, $matches)) {
+            $parsed_logs[] = [
+                'time' => $matches[1],
+                'level' => $matches[2],
+                'ip' => $matches[3],
+                'user' => $matches[4],
+                'action' => $matches[5],
+                'details' => $matches[6]
+            ];
+        } else {
+            $parsed_logs[] = [
+                'time' => '',
+                'level' => 'INFO',
+                'ip' => '',
+                'user' => '',
+                'action' => 'RAW',
+                'details' => $line
+            ];
+        }
+    }
+    // Return chronological order (first event at the top)
+    echo json_encode(['success' => true, 'data' => $parsed_logs]);
 
 } else {
     echo json_encode(['success' => false, 'error' => 'Invalid Action']);

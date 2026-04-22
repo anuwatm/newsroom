@@ -1,5 +1,9 @@
 <?php
 session_start();
+require_once __DIR__ . '/logger.php';
+if (isset($_SESSION['user'])) {
+    write_log('LOGOUT', 'Logged out successfully');
+}
 session_unset();
 session_destroy();
 if (ini_get("session.use_cookies")) {

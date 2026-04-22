@@ -192,10 +192,9 @@ function renderCalendar() {
         let isToday = dateStr === todayDateStr ? 'today' : '';
         
         let dayEvents = calendarData.filter(d => d.date === dateStr);
-        // Apply filters (if dept is needed we could filter by finding matching dept from assignment via api, 
-        // but calendarData currently doesn't have department_id. We'll skip dept filter on calendar if missing, or we assume it's filtered backend. 
-        // Wait, the backend already filters calendar_data by department if role=2. If we want UI filtering we should add it.
-        // I will just filter status on UI.)
+        if (fDept) {
+            dayEvents = dayEvents.filter(d => d.department_id == fDept);
+        }
         if (fStatus) {
             dayEvents = dayEvents.filter(d => d.status === fStatus);
         }

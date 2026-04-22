@@ -1,0 +1,4 @@
+[2026-04-22 16:48:09] [WARNING] [::1] [Guest] [LOGIN_FAILED] Failed attempt (1/5) for user: admin
+[2026-04-22 16:48:14] [INFO] [::1] [Emp: admin/บกกลาง] [LOGIN_SUCCESS] Logged in successfully to Role: บกกลาง
+[2026-04-22 16:48:31] [INFO] [::1] [Emp: admin/บกกลาง] [UPDATE_RUNDOWN_ORDER] Re-arranged and saved order layout for 7 items in rundown ID 1
+[2026-04-22 16:48:34] [INFO] [::1] [Emp: admin/บกกลาง] [UPDATE_RUNDOWN_ORDER] Re-arranged and saved order layout for 7 items in rundown ID 1

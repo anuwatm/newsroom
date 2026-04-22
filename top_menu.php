@@ -42,6 +42,7 @@ try {
                         <a href="users.php">User Management</a>
                         <a href="departments.php">Department Management</a>
                         <a href="equipment.php">Equipment Management</a>
+                        <a href="syslog.php" style="color:#ffb74d;">System Logs (Audit)</a>
                         <?php endif; ?>
                     </div>
                 </div>
