@@ -44,6 +44,78 @@ function applyUIPermissions() {
     }
 }
 
+window.loadAssignmentsList = async (deptId) => {
+    if (!Elements.metaAssignment) return;
+    try {
+        const res = await fetch(`api.php?action=get_assignments&department_id=${deptId}&status=APPROVED`);
+        const json = await res.json();
+        const curVal = Elements.metaAssignment.value;
+        Elements.metaAssignment.innerHTML = '<option value="">-- ไม่ผูกกับหมายข่าว --</option>';
+        if (json.success && json.data) {
+            json.data.forEach(a => {
+                const title = `[${a.status}] ${a.title} (${a.reporter_name})`;
+                Elements.metaAssignment.insertAdjacentHTML('beforeend', `<option value="${escapeHTML(a.id)}">${escapeHTML(title)}</option>`);
+            });
+        }
+        if (curVal) Elements.metaAssignment.value = curVal;
+    } catch (e) {}
+};
+
+window.loadComments = async () => {
+    if (!State.currentStoryId) return;
+    try {
+        const res = await fetch(`api.php?action=get_story_comments&id=${State.currentStoryId}`);
+        const json = await res.json();
+        if (Elements.commentBadge) {
+            Elements.commentBadge.innerText = json.data.length;
+            if(json.data.length > 0) Elements.commentBadge.style.display = 'block'; else Elements.commentBadge.style.display = 'none';
+        }
+        
+        let html = '';
+        json.data.forEach(c => {
+            html += `<div style="background:#2a2a2a; padding:10px; border-radius:8px; font-size:13px;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:5px; color:#4caf50;">
+                    <b>${escapeHTML(c.author_name || c.user_id)} <span style="font-size:11px; color:#888;">(${escapeHTML(c.role_name || '')})</span></b>
+                    <small style="color:#aaa;">${escapeHTML(c.created_at)}</small>
+                </div>
+                <div>${escapeHTML(c.message)}</div>
+            </div>`;
+        });
+        if (Elements.commentsList) Elements.commentsList.innerHTML = html || '<div style="color:#aaa; text-align:center;">No comments yet.</div>';
+    } catch (e) {}
+};
+
+window.loadVersions = async () => {
+    if (!State.currentStoryId) return;
+    try {
+        const res = await fetch(`api.php?action=get_story_versions&id=${State.currentStoryId}`);
+        const json = await res.json();
+        let html = '';
+        json.data.forEach(v => {
+            html += `<div style="background:#2a2a2a; padding:10px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <b>Version ${v.version}</b><br>
+                    <small style="color:#aaa;">${new Date(v.time * 1000).toLocaleString()}</small>
+                </div>
+                <button class="btn btn-outline" style="border:none; color:#4caf50;" onclick="window.restoreVersion(${v.version})">Restore</button>
+            </div>`;
+        });
+        if (Elements.versionsList) Elements.versionsList.innerHTML = html || '<div style="color:#aaa; text-align:center;">No version history.</div>';
+    } catch (e) {}
+};
+
+window.restoreVersion = async (version) => {
+    if (!confirm(`Are you sure you want to restore Version ${version}? This will reload the editor.`)) return;
+    try {
+        await fetch('api.php?action=restore_story_version', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ csrf_token: window.currentUser.csrfToken, id: State.currentStoryId, version: version })
+        });
+        window.location.reload();
+    } catch (e) {}
+};
+
 async function loadStory(id) {
     try {
         const result = await getStory(id);
@@ -92,8 +164,11 @@ async function loadStory(id) {
                 }
             }
 
+            if (Elements.metaFormat) Elements.metaFormat.value = meta.format || '';
             if (Elements.metaSlug) Elements.metaSlug.value = meta.slug || '';
             if (Elements.metaDepartment) Elements.metaDepartment.value = meta.department || '';
+            if (window.loadAssignmentsList && meta.department) await window.loadAssignmentsList(meta.department);
+            if (Elements.metaAssignment) Elements.metaAssignment.value = meta.assignment || '';
             if (Elements.metaReporter) Elements.metaReporter.value = meta.reporter || '';
             if (Elements.metaStatus) Elements.metaStatus.value = meta.status || 'DRAFT';
             if (Elements.metaAnchor) Elements.metaAnchor.value = meta.anchor || '';
@@ -118,6 +193,7 @@ async function loadStory(id) {
                 const cues = row.leftColumn.cues || [];
                 addNewRow(cues, row.rightColumn.text);
             });
+            window.loadComments();
         } else {
             alert('Failed to load story: ' + result.error);
             addNewRow();
@@ -196,8 +272,9 @@ async function saveStory(isAutoSave = false) {
 
         const metaData = {
             slug: Elements.metaSlug ? Elements.metaSlug.value : '',
-            format: '',
+            format: Elements.metaFormat ? Elements.metaFormat.value : '',
             department: Elements.metaDepartment ? Elements.metaDepartment.value : '',
+            assignment: Elements.metaAssignment ? Elements.metaAssignment.value : '',
             reporter: Elements.metaReporter ? Elements.metaReporter.value : '',
             anchor: extractedAnchorText.trim(),
             status: Elements.metaStatus ? Elements.metaStatus.value : 'DRAFT',
@@ -360,6 +437,69 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         State.initialStatus = 'DRAFT';
         addNewRow();
+        if (Elements.metaDepartment && Elements.metaDepartment.value) {
+            window.loadAssignmentsList(Elements.metaDepartment.value);
+        }
+    }
+
+    if (Elements.metaDepartment) {
+        Elements.metaDepartment.addEventListener('change', (e) => {
+            if (window.loadAssignmentsList) window.loadAssignmentsList(e.target.value);
+        });
+    }
+
+    if (Elements.metaFormat) {
+        Elements.metaFormat.addEventListener('change', (e) => {
+            const format = e.target.value;
+            const rows = document.querySelectorAll('.script-row');
+            if (rows.length === 1 && rows[0].querySelector('.read-input').value.trim() === '') {
+                Elements.scriptBody.innerHTML = '';
+                if (format === 'PKG') {
+                    addNewRow([{type: 'CG', value: 'ชื่อ-นามสกุล/นักข่าวภาคสนาม'}], '[Reporter Stand-up or Voice Over]');
+                    addNewRow([{type: 'SOT', value: 'ชื่อ/ตำแหน่ง แหล่งข่าว'}], '[เสียงสัมภาษณ์]');
+                } else if (format === 'LIVE') {
+                    addNewRow([{type: 'LIVE', value: 'สดจาก...'}], '[รายงานสด]');
+                } else if (format === 'INTERVIEW') {
+                    addNewRow([{type: 'VO', value: ''}], '[บรรยายนำเข้าการสัมภาษณ์]');
+                    addNewRow([{type: 'SOT', value: 'ชื่อ/ตำแหน่ง แหล่งข่าว'}], '[เสียงสัมภาษณ์]');
+                } else {
+                    addNewRow();
+                }
+            }
+        });
+    }
+
+    if (Elements.btnComments) {
+        Elements.btnComments.addEventListener('click', () => {
+            Elements.commentsSidebar.classList.add('open');
+            window.loadComments();
+        });
+        Elements.btnCloseComments.addEventListener('click', () => {
+            Elements.commentsSidebar.classList.remove('open');
+        });
+        Elements.btnSendComment.addEventListener('click', async () => {
+            const msg = Elements.commentInput.value.trim();
+            if (!msg || !State.currentStoryId) return;
+            try {
+                await fetch('api.php?action=add_story_comment', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ csrf_token: window.currentUser.csrfToken, id: State.currentStoryId, message: msg })
+                });
+                Elements.commentInput.value = '';
+                window.loadComments();
+            } catch (e) {}
+        });
+    }
+
+    if (Elements.btnVersions) {
+        Elements.btnVersions.addEventListener('click', () => {
+            Elements.versionsSidebar.classList.add('open');
+            window.loadVersions();
+        });
+        Elements.btnCloseVersions.addEventListener('click', () => {
+            Elements.versionsSidebar.classList.remove('open');
+        });
     }
 
     startAutoSave();

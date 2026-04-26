@@ -2,6 +2,7 @@
 // Validate session user
 $user = $_SESSION['user'] ?? null;
 if (!$user) return; // fail-safe
+require_once 'session_guard.php';
 $active_menu = $active_menu ?? '';
 
 // Update presence heartbeat
@@ -57,6 +58,9 @@ try {
                 <div class="user-name" style="font-size: 14px; font-weight: 600; color: #fff;"><?php echo htmlspecialchars($user['full_name']); ?></div>
                 <div class="user-role" style="font-size: 12px; color: #aaa;"><?php echo htmlspecialchars($user['department_name'] . ' • ' . $user['role_name']); ?></div>
             </div>
+            <a href="change_password.php" class="btn-logout" title="Change Password" style="margin-left: 16px; color: var(--accent); text-decoration: none; font-size: 13px; font-weight: bold;">
+                Change Password
+            </a>
             <a href="logout.php" class="btn-logout" title="Logout" style="margin-left: 16px; display: flex; align-items: center; gap: 6px; color: #f44336; text-decoration: none; font-size: 13px; font-weight: bold;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
                 Sign Out

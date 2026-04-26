@@ -228,7 +228,7 @@ $csrf_token = $_SESSION['csrf_token'];
                         <button id="btn-add-break" title="Add Commercial Break" class="btn btn-secondary" style="background:#555; border:none; padding:10px 16px; border-radius:8px;"><i class="fa-solid fa-film"></i></button>
                         <button id="btn-lock-board" title="Lock Rundown" class="btn btn-secondary" style="padding:10px 16px; border-radius:8px;"><i class="fa-solid fa-lock"></i></button>
                     <?php endif; ?>
-                    <button class="btn btn-secondary" title="Print Rundown" style="padding:10px 16px; border-radius:8px;"><i class="fa-solid fa-print"></i></button>
+                    <button id="btn-print-rundown" class="btn btn-secondary" title="Print Rundown" style="padding:10px 16px; border-radius:8px;"><i class="fa-solid fa-print"></i></button>
                 </div>
             </div>
 

@@ -90,6 +90,26 @@ try {
 } catch (Exception $e) { /* Column already exists */ }
 
 try {
+    $db->exec("ALTER TABLE users ADD COLUMN login_attempts INTEGER DEFAULT 0");
+} catch (Exception $e) {}
+try {
+    $db->exec("ALTER TABLE users ADD COLUMN locked_until DATETIME");
+} catch (Exception $e) {}
+try {
+    $db->exec("ALTER TABLE stories ADD COLUMN assignment_id INTEGER");
+} catch (Exception $e) {}
+try {
+    $db->exec("CREATE TABLE IF NOT EXISTS story_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        story_id INTEGER NOT NULL,
+        user_id TEXT NOT NULL,
+        message TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(story_id) REFERENCES stories(id) ON DELETE CASCADE
+    )");
+} catch (Exception $e) {}
+
+try {
     $db->exec("ALTER TABLE stories ADD COLUMN author_id TEXT");
     $db->exec("UPDATE stories SET author_id = reporter WHERE author_id IS NULL");
 } catch (Exception $e) { /* Column already exists */ }
@@ -158,6 +178,7 @@ try {
 } catch (Exception $e) {}
 
 session_start();
+require_once 'session_guard.php';
 if (!isset($_SESSION['user'])) {
     echo json_encode(['success' => false, 'error' => 'Unauthorized. Please log in.']);
     exit;
@@ -274,13 +295,13 @@ if ($method === 'POST' && $action === 'save_story') {
             // หากเป็น Auto-save ให้ใช้เวอร์ชันเก่าเซฟทับ หากผู้ใช้กด Save ให้ขึ้นเวอร์ชันใหม่
             $newVersion = ($is_autosave && $currentVersion > 0) ? $currentVersion : $currentVersion + 1;
 
-            $stmt = $db->prepare("UPDATE stories SET slug=?, format=?, reporter=?, anchor=?, department_id=?, status=?, estimated_time=?, current_version=?, keywords=?, keyword_soundex=?, locked_by=?, locked_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?");
-            $stmt->execute([$meta['slug'], $meta['format'], $meta['reporter'], $meta['anchor'], $meta['department'], $meta['status'], $meta['estimated_time'], $newVersion, $keywords, $soundexStr, ($user['employee_id'] ?? $user['id'] ?? $user['full_name']), $storyId]);
+            $stmt = $db->prepare("UPDATE stories SET slug=?, format=?, reporter=?, anchor=?, department_id=?, status=?, estimated_time=?, current_version=?, keywords=?, keyword_soundex=?, assignment_id=?, locked_by=?, locked_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?");
+            $stmt->execute([$meta['slug'], $meta['format'], $meta['reporter'], $meta['anchor'], $meta['department'], $meta['status'], $meta['estimated_time'], $newVersion, $keywords, $soundexStr, $meta['assignment'] ?: null, ($user['employee_id'] ?? $user['id'] ?? $user['full_name']), $storyId]);
         } else {
             // Insert new story
             $authorId = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
-            $stmt = $db->prepare("INSERT INTO stories (slug, format, reporter, anchor, department_id, status, estimated_time, current_version, keywords, keyword_soundex, author_id) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)");
-            $stmt->execute([$meta['slug'], $meta['format'], $meta['reporter'], $meta['anchor'], $meta['department'], $meta['status'], $meta['estimated_time'], $keywords, $soundexStr, $authorId]);
+            $stmt = $db->prepare("INSERT INTO stories (slug, format, reporter, anchor, department_id, status, estimated_time, current_version, keywords, keyword_soundex, assignment_id, author_id) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)");
+            $stmt->execute([$meta['slug'], $meta['format'], $meta['reporter'], $meta['anchor'], $meta['department'], $meta['status'], $meta['estimated_time'], $keywords, $soundexStr, $meta['assignment'] ?: null, $authorId]);
             $storyId = $db->lastInsertId();
         }
 
@@ -456,6 +477,7 @@ if ($method === 'POST' && $action === 'save_story') {
                 'anchor' => $story['anchor'],
                 'department' => $story['department_id'],
                 'status' => $story['status'],
+                'assignment' => $story['assignment_id'],
                 'estimated_time' => $story['estimated_time'],
                 'keywords' => $story['keywords'] ?? ''
             ],
@@ -577,7 +599,11 @@ if ($method === 'POST' && $action === 'save_story') {
     }
     
     $program_id = $data['program_id'] ?? null;
-    $name = $data['name'] ?? 'New Rundown';
+    $name = trim($data['name'] ?? 'New Rundown');
+    if (mb_strlen($name, 'UTF-8') > 255) {
+        echo json_encode(['success' => false, 'error' => 'Name exceeds maximum length of 255 characters']);
+        exit;
+    }
     $broadcast_time_val = trim($data['broadcast_time'] ?? '');
     $bt_timestamp = strtotime($broadcast_time_val);
     if (!$bt_timestamp) {
@@ -626,7 +652,7 @@ if ($method === 'POST' && $action === 'save_story') {
         exit;
     }
     
-    $rundownId = $_GET['id'] ?? null;
+    $rundownId = intval($_GET['id'] ?? 0);
     if (!$rundownId) {
         echo json_encode(['success' => false, 'error' => 'Missing rundown ID']);
         exit;
@@ -643,8 +669,23 @@ if ($method === 'POST' && $action === 'save_story') {
 
     try {
         $user_fullname = $_SESSION['user']['full_name'];
-        $db->prepare("UPDATE rundowns SET locked_by = ?, locked_at = CURRENT_TIMESTAMP WHERE id = ?")
-           ->execute([$user_fullname, $rundownId]);
+        $stmtLock = $db->prepare("SELECT is_locked, locked_by, locked_at FROM rundowns WHERE id=?");
+        $stmtLock->execute([$rundownId]);
+        $rLock = $stmtLock->fetch(PDO::FETCH_ASSOC);
+        
+        $can_lock = true;
+        if ($rLock['is_locked'] == 1) {
+            $can_lock = false;
+        } elseif (!empty($rLock['locked_by']) && $rLock['locked_by'] !== $user_fullname) {
+            if (!empty($rLock['locked_at']) && (time() - strtotime($rLock['locked_at'])) < 300) {
+                $can_lock = false;
+            }
+        }
+        
+        if ($can_lock) {
+            $db->prepare("UPDATE rundowns SET locked_by = ?, locked_at = CURRENT_TIMESTAMP WHERE id = ?")
+               ->execute([$user_fullname, $rundownId]);
+        }
     } catch(Exception $e) {}
     
     $stmtStories = $db->prepare("
@@ -883,6 +924,10 @@ if ($method === 'POST' && $action === 'save_story') {
         echo json_encode(['success' => false, 'error' => 'Name cannot be empty']);
         exit;
     }
+    if (mb_strlen($name, 'UTF-8') > 255) {
+        echo json_encode(['success' => false, 'error' => 'Name exceeds maximum length of 255 characters']);
+        exit;
+    }
 
     if ($id) {
         $stmt = $db->prepare("UPDATE programs SET name=?, duration=?, break_count=? WHERE id=?");
@@ -958,6 +1003,13 @@ if ($method === 'POST' && $action === 'save_story') {
         echo json_encode(['success' => false, 'error' => 'Missing required fields']);
         exit;
     }
+
+    if (!empty($password)) {
+        if (strlen($password) < 8 || !preg_match('/[A-Za-z]/', $password) || !preg_match('/[0-9]/', $password)) {
+            echo json_encode(['success' => false, 'error' => 'Password must be at least 8 characters and contain both letters and numbers']);
+            exit;
+        }
+    }
     
     if ($is_edit) {
         if (!empty($password)) {
@@ -1030,6 +1082,10 @@ if ($method === 'POST' && $action === 'save_story') {
     
     if (empty($name)) {
         echo json_encode(['success' => false, 'error' => 'Department name is required']);
+        exit;
+    }
+    if (mb_strlen($name, 'UTF-8') > 255) {
+        echo json_encode(['success' => false, 'error' => 'Department name exceeds maximum length of 255 characters']);
         exit;
     }
     
@@ -1176,7 +1232,10 @@ if ($method === 'POST' && $action === 'save_story') {
 
     // 10. Reporter Productivity (Top 5 Authors)
     $stmtTopRep = $db->query("
-        SELECT author_id, COUNT(*) as count 
+        SELECT author_id, 
+               COUNT(*) as count,
+               SUM(CASE WHEN status='APPROVED' THEN 1 ELSE 0 END) as approved_count,
+               AVG(estimated_time) as avg_time
         FROM stories 
         WHERE is_deleted = 0 AND author_id IS NOT NULL AND author_id != '' 
         GROUP BY author_id 
@@ -1373,14 +1432,20 @@ if ($method === 'POST' && $action === 'save_story') {
         $user = $_SESSION['user'];
         $role_id = intval($user['role_id']);
         $user_emp_id = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
+        $has_permission = true;
+
         if ($role_id == 1 || $role_id == 4) {
             if ($ass['reporter_id'] !== $user_emp_id && $ass['created_by'] !== $user_emp_id) {
-                echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
+                $has_permission = false;
             }
         } elseif ($role_id == 2) {
             if ($ass['department_id'] != $user['department_id']) {
-                echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
+                $has_permission = false;
             }
+        }
+
+        if (!$has_permission) {
+            echo json_encode(['success' => false, 'error' => 'Assignment not found']); exit;
         }
 
         $stmtT = $db->prepare("SELECT * FROM assignment_trips WHERE assignment_id = ? ORDER BY trip_date ASC, start_time ASC");
@@ -1869,6 +1934,82 @@ if ($method === 'POST' && $action === 'save_story') {
     }
     // Return chronological order (first event at the top)
     echo json_encode(['success' => true, 'data' => $parsed_logs]);
+
+} elseif ($method === 'GET' && $action === 'get_story_versions') {
+    $storyId = intval($_GET['id'] ?? 0);
+    $versions = [];
+    $dataDir = __DIR__ . '/data/stories';
+    if ($storyId > 0 && is_dir($dataDir)) {
+        $files = glob($dataDir . "/story_{$storyId}_v*.json");
+        foreach ($files as $f) {
+            if (preg_match('/_v(\d+)\.json$/', $f, $m)) {
+                $versions[] = ['version' => intval($m[1]), 'file' => basename($f), 'time' => filemtime($f)];
+            }
+        }
+    }
+    rsort($versions);
+    echo json_encode(['success' => true, 'data' => $versions]);
+
+} elseif ($method === 'POST' && $action === 'restore_story_version') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']); exit;
+    }
+    $storyId = intval($data['id'] ?? 0);
+    $version = intval($data['version'] ?? 0);
+    
+    $filePath = __DIR__ . "/data/stories/story_{$storyId}_v{$version}.json";
+    if (!file_exists($filePath)) {
+        echo json_encode(['success' => false, 'error' => 'Version not found']); exit;
+    }
+    
+    $content = json_decode(file_get_contents($filePath), true);
+    $db->prepare("UPDATE stories SET current_version=? WHERE id=?")->execute([$version, $storyId]);
+    write_log('RESTORE_VERSION', "Restored story ID {$storyId} to version {$version}");
+    echo json_encode(['success' => true, 'content' => $content]);
+
+} elseif ($method === 'GET' && $action === 'get_story_comments') {
+    $storyId = intval($_GET['id'] ?? 0);
+    $stmt = $db->prepare("SELECT c.*, u.full_name as author_name, r.name as role_name FROM story_comments c LEFT JOIN users u ON c.user_id = u.employee_id LEFT JOIN roles r ON u.role_id = r.id WHERE c.story_id = ? ORDER BY c.created_at ASC");
+    $stmt->execute([$storyId]);
+    echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+
+} elseif ($method === 'POST' && $action === 'add_story_comment') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']); exit;
+    }
+    $storyId = intval($data['id'] ?? 0);
+    $msg = trim($data['message'] ?? '');
+    $user = $_SESSION['user'];
+    $empId = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
+    
+    if (!$storyId || empty($msg)) {
+        echo json_encode(['success' => false, 'error' => 'Missing data']); exit;
+    }
+    $stmt = $db->prepare("INSERT INTO story_comments (story_id, user_id, message) VALUES (?, ?, ?)");
+    $stmt->execute([$storyId, $empId, $msg]);
+    write_log('ADD_COMMENT', "Added comment to story ID {$storyId}");
+    echo json_encode(['success' => true]);
+
+} elseif ($method === 'GET' && $action === 'check_equipment_availability') {
+    $date = trim($_GET['date'] ?? '');
+    $equip = trim($_GET['equipment'] ?? '');
+    $qty = intval($_GET['qty'] ?? 1);
+    
+    $stmtM = $db->prepare("SELECT total_units FROM equipment_master WHERE name = ?");
+    $stmtM->execute([$equip]);
+    $total = $stmtM->fetchColumn();
+    if ($total === false) {
+        echo json_encode(['success' => true, 'available' => false, 'error' => 'Equipment not found']); exit;
+    }
+    
+    $stmtU = $db->prepare("SELECT SUM(e.quantity) FROM assignment_equipment e JOIN assignments a ON e.assignment_id = a.id JOIN assignment_trips t ON a.id = t.assignment_id WHERE t.trip_date = ? AND a.status IN ('PENDING', 'APPROVED') AND e.equipment_name = ?");
+    $stmtU->execute([$date, $equip]);
+    $used = intval($stmtU->fetchColumn());
+    
+    $available = ($total - $used) >= $qty;
+    echo json_encode(['success' => true, 'available' => $available, 'remaining' => ($total - $used)]);
 
 } else {
     echo json_encode(['success' => false, 'error' => 'Invalid Action']);

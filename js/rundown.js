@@ -59,6 +59,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnAddBreak) {
         btnAddBreak.addEventListener('click', openAddBreakPrompt);
     }
+    
+    const btnPrintRundown = document.getElementById('btn-print-rundown');
+    if (btnPrintRundown) {
+        btnPrintRundown.addEventListener('click', () => {
+            if (currentRundownId) {
+                window.open('print_rundown.php?id=' + currentRundownId, '_blank');
+            }
+        });
+    }
 
     const sInput = document.getElementById('story-search-input');
     if (sInput) {

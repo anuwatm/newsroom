@@ -8,21 +8,10 @@ if (isset($_SESSION['user'])) {
 }
 
 $error = '';
-
-// Brute Force Protection
 $max_attempts = 5;
 $lockout_time = 300; // 5 minutes
 
-if (isset($_SESSION['login_attempts']) && $_SESSION['login_attempts'] >= $max_attempts) {
-    if (time() - $_SESSION['last_login_attempt'] < $lockout_time) {
-        $remaining = ceil(($lockout_time - (time() - $_SESSION['last_login_attempt'])) / 60);
-        $error = "คุณเข้าระบบผิดพลาดเกิน $max_attempts ครั้ง กรุณารอสักครู่ $remaining นาที แล้วลองใหม่";
-    } else {
-        $_SESSION['login_attempts'] = 0;
-    }
-}
-
-if ($_SERVER["REQUEST_METHOD"] == "POST" && empty($error)) {
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $emp_id = trim($_POST['employee_id'] ?? '');
     $password = $_POST['password'] ?? '';
 
@@ -39,33 +28,49 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && empty($error)) {
         $stmt->execute([$emp_id]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($user && password_verify($password, $user['password'])) {
-            // Login success
-            $_SESSION['login_attempts'] = 0;
-            session_regenerate_id(true);
-            $_SESSION['user'] = [
-                'employee_id' => $user['employee_id'],
-                'full_name' => $user['full_name'],
-                'role_id' => $user['role_id'],
-                'role_name' => $user['role_name'],
-                'department_id' => $user['department_id'],
-                'department_name' => $user['department_name']
-            ];
-            
-            write_log('LOGIN_SUCCESS', "Logged in successfully to Role: " . $user['role_name']);
-
-            header("Location: index.php");
-            exit;
-        } else {
-            $_SESSION['login_attempts'] = ($_SESSION['login_attempts'] ?? 0) + 1;
-            $_SESSION['last_login_attempt'] = time();
-            
-            if ($_SESSION['login_attempts'] >= $max_attempts) {
-                write_log('LOGIN_LOCKOUT', "IP blocked due to $max_attempts failed attempts for user: {$emp_id}", 'WARNING');
+        if ($user) {
+            // Check lockout
+            $locked_until = strtotime($user['locked_until'] ?? '0');
+            if ($locked_until > time()) {
+                $remaining = ceil(($locked_until - time()) / 60);
+                $error = "คุณเข้าระบบผิดพลาดเกิน $max_attempts ครั้ง กรุณารอสักครู่ $remaining นาที แล้วลองใหม่";
+                write_log('LOGIN_LOCKED', "Rejected attempt for locked user: {$emp_id}", 'WARNING');
             } else {
-                write_log('LOGIN_FAILED', "Failed attempt ({$_SESSION['login_attempts']}/$max_attempts) for user: {$emp_id}", 'WARNING');
-            }
+                if (password_verify($password, $user['password'])) {
+                    // Login success
+                    $db->prepare("UPDATE users SET login_attempts = 0, locked_until = NULL WHERE employee_id = ?")->execute([$emp_id]);
+                    session_regenerate_id(true);
+                    $_SESSION['user'] = [
+                        'employee_id' => $user['employee_id'],
+                        'full_name' => $user['full_name'],
+                        'role_id' => $user['role_id'],
+                        'role_name' => $user['role_name'],
+                        'department_id' => $user['department_id'],
+                        'department_name' => $user['department_name']
+                    ];
+                    $_SESSION['last_activity'] = time(); // For session timeout
+                    
+                    write_log('LOGIN_SUCCESS', "Logged in successfully to Role: " . $user['role_name']);
 
+                    header("Location: index.php");
+                    exit;
+                } else {
+                    $attempts = intval($user['login_attempts']) + 1;
+                    if ($attempts >= $max_attempts) {
+                        $lock_time = date('Y-m-d H:i:s', time() + $lockout_time);
+                        $db->prepare("UPDATE users SET login_attempts = ?, locked_until = ? WHERE employee_id = ?")->execute([$attempts, $lock_time, $emp_id]);
+                        write_log('LOGIN_LOCKOUT', "Account locked due to $max_attempts failed attempts for user: {$emp_id}", 'WARNING');
+                        $error = "คุณเข้าระบบผิดพลาดเกิน $max_attempts ครั้ง กรุณารอสักครู่ 5 นาที แล้วลองใหม่";
+                    } else {
+                        $db->prepare("UPDATE users SET login_attempts = ? WHERE employee_id = ?")->execute([$attempts, $emp_id]);
+                        write_log('LOGIN_FAILED', "Failed attempt ({$attempts}/$max_attempts) for user: {$emp_id}", 'WARNING');
+                        $error = "รหัสพนักงานหรือรหัสผ่านไม่ถูกต้อง";
+                    }
+                }
+            }
+        } else {
+            // User not found - simulate generic error
+            write_log('LOGIN_FAILED', "Failed attempt for non-existent user: {$emp_id}", 'WARNING');
             $error = "รหัสพนักงานหรือรหัสผ่านไม่ถูกต้อง";
         }
     }

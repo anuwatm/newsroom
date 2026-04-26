@@ -543,8 +543,12 @@ $csrf_token = $_SESSION['csrf_token'];
             reporters.forEach((r, i) => {
                 const w = document.createElement('div');
                 w.className = 'list-item';
+                const rate = r.count > 0 ? Math.round((r.approved_count / r.count) * 100) : 0;
                 w.innerHTML = `<div><span style="color:#555; font-weight:bold; margin-right:8px;">#${i+1}</span> <span style="color:#fff; font-weight:500;">${escapeHTML(r.author_id)}</span></div>
-                               <div style="background:#333; padding:4px 10px; border-radius:12px; font-size:12px; color:#bbb;"><b>${r.count}</b> stories</div>`;
+                               <div style="background:#333; padding:4px 10px; border-radius:12px; font-size:12px; color:#bbb; text-align:right;">
+                                   <b>${r.count}</b> stories<br>
+                                   <span style="color:#4caf50; font-size:10px;">${rate}% Approval | Avg: ${Math.round(r.avg_time)}s</span>
+                               </div>`;
                 container.appendChild(w);
             });
         }

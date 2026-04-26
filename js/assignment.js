@@ -562,6 +562,17 @@ window.openAssignmentModal = async (id = null) => {
         confirmButtonColor: '#4caf50',
         didOpen: () => {
             window.renderTrips();
+            document.getElementById('equipment-container').addEventListener('change', (e) => {
+                if(e.target.classList.contains('eq-cb') || e.target.classList.contains('eq-qty')) {
+                    window.checkEquipmentAvailability();
+                }
+            });
+            document.getElementById('trips-container').addEventListener('change', (e) => {
+                if(e.target.classList.contains('t-date')) {
+                    window.checkEquipmentAvailability();
+                }
+            });
+            setTimeout(() => window.checkEquipmentAvailability(), 500);
         },
         preConfirm: () => {
             const title = document.getElementById('a_title').value.trim();
@@ -671,4 +682,64 @@ window.renderTrips = () => {
         `;
     });
     cont.innerHTML = html;
+};
+
+window.checkEquipmentAvailability = async () => {
+    const eqSelected = [];
+    document.querySelectorAll('.eq-cb:checked').forEach(cb => {
+        let name = cb.value;
+        let p = cb.closest('.eq-row');
+        let qty = p.querySelector('.eq-qty').value;
+        let label = p.querySelector('label');
+        let warningSpan = p.querySelector('.eq-warning');
+        if (!warningSpan) {
+            warningSpan = document.createElement('span');
+            warningSpan.className = 'eq-warning';
+            warningSpan.style.marginLeft = '10px';
+            label.appendChild(warningSpan);
+        }
+        warningSpan.innerText = 'checking...';
+        warningSpan.style.color = '#888';
+        eqSelected.push({ name, qty, warningSpan, row: p });
+    });
+    
+    if (eqSelected.length === 0) return;
+
+    const tripNodes = document.querySelectorAll('.t-date');
+    const dates = new Set();
+    tripNodes.forEach(node => { if(node.value) dates.add(node.value); });
+    if(dates.size === 0) {
+        eqSelected.forEach(eq => eq.warningSpan.innerText = '');
+        return;
+    }
+
+    for (let eq of eqSelected) {
+        let minRem = 9999;
+        let isShort = false;
+        let shortDate = '';
+        
+        for(let d of dates) {
+            try {
+                const res = await apiCall('check_equipment_availability', { date: d, equipment: eq.name, qty: eq.qty });
+                if (!res.available) {
+                    isShort = true;
+                    shortDate = d;
+                    minRem = res.remaining;
+                    break;
+                } else {
+                    if (res.remaining < minRem) minRem = res.remaining;
+                }
+            } catch (e) {}
+        }
+        
+        if (isShort) {
+            eq.warningSpan.innerText = `⚠️ ขาดแคลน (เหลือ ${minRem} ในวันที่ ${shortDate})`;
+            eq.warningSpan.style.color = '#f44336';
+            eq.row.style.borderColor = '#f44336';
+        } else {
+            eq.warningSpan.innerText = `✅ (เหลือ ${minRem})`;
+            eq.warningSpan.style.color = '#4caf50';
+            eq.row.style.borderColor = '#333';
+        }
+    }
 };

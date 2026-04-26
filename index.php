@@ -40,8 +40,17 @@ $csrf_token = $_SESSION['csrf_token'];
         <div class="meta-section">
             <input type="text" id="meta-slug" placeholder="Story Slug e.g. ไฟไหม้โรงงาน_สมุทรปราการ" class="meta-input slug-input">
             <div class="meta-row">
+                <select id="meta-format" class="meta-input">
+                    <option value="">-- รูปแบบข่าว --</option>
+                    <option value="PKG">News Report (PKG)</option>
+                    <option value="LIVE">Live Report (LIVE)</option>
+                    <option value="INTERVIEW">Interview (VOSOT)</option>
+                </select>
                 <select id="meta-department" class="meta-input">
                     <!-- Loaded via JS -->
+                </select>
+                <select id="meta-assignment" class="meta-input">
+                    <option value="">-- ไม่ผูกกับหมายข่าว --</option>
                 </select>
                 <input type="text" id="meta-reporter" placeholder="Reporter" class="meta-input" list="reporter-list">
                 <datalist id="reporter-list"></datalist>
@@ -59,6 +68,8 @@ $csrf_token = $_SESSION['csrf_token'];
                 <span id="total-time">00:00</span>
             </div>
             <div class="btn-group">
+                <button id="btn-comments" class="btn btn-secondary" title="Comments" style="position:relative; overflow:visible;"><i class="fa-regular fa-comment"></i> <span id="comment-badge" style="display:none; position:absolute; top:-5px; right:-5px; background:#f44336; color:#fff; border-radius:10px; padding:2px 6px; font-size:10px; font-weight:bold;">0</span></button>
+                <button id="btn-versions" class="btn btn-secondary" title="Version History"><i class="fa-solid fa-clock-rotate-left"></i></button>
                 <button id="btn-print" class="btn btn-secondary">PRINT STORY</button>
                 <button id="btn-save" class="btn btn-primary">SAVE STORY</button>
             </div>
@@ -173,6 +184,32 @@ $csrf_token = $_SESSION['csrf_token'];
         <div class="modal-footer">
             <button id="btn-load-preview" class="btn btn-primary">เปิดแก้ไขข่าวนีี้</button>
             <button id="btn-cancel-preview" class="btn btn-secondary">ปิด</button>
+        </div>
+    </div>
+
+    <!-- Comments Sidebar -->
+    <div id="comments-sidebar" class="archive-sidebar" style="width: 350px; display:flex; flex-direction:column;">
+        <div class="archive-header">
+            <h2>Comments</h2>
+            <button id="btn-close-comments" class="btn" style="background:transparent; color:#fff; font-size:24px; border:none; padding:0;">&times;</button>
+        </div>
+        <div id="comments-list" style="flex:1; overflow-y:auto; padding:15px; display:flex; flex-direction:column; gap:10px;">
+            <div style="color:#aaa; text-align:center;">Loading...</div>
+        </div>
+        <div style="padding:15px; background:#222; border-top:1px solid #333; display:flex; gap:10px;">
+            <input type="text" id="comment-input" class="meta-input" placeholder="พิมพ์ข้อความ..." style="flex:1; margin:0;" onkeypress="if(event.key==='Enter') document.getElementById('btn-send-comment').click()">
+            <button id="btn-send-comment" class="btn btn-primary" style="padding:8px 12px;"><i class="fa-solid fa-paper-plane"></i></button>
+        </div>
+    </div>
+
+    <!-- Versions Sidebar -->
+    <div id="versions-sidebar" class="archive-sidebar" style="width: 350px; display:flex; flex-direction:column;">
+        <div class="archive-header">
+            <h2>Version History</h2>
+            <button id="btn-close-versions" class="btn" style="background:transparent; color:#fff; font-size:24px; border:none; padding:0;">&times;</button>
+        </div>
+        <div id="versions-list" style="flex:1; overflow-y:auto; padding:15px; display:flex; flex-direction:column; gap:10px;">
+            <div style="color:#aaa; text-align:center;">Loading...</div>
         </div>
     </div>
 
