@@ -58,6 +58,20 @@ try {
                 <div class="user-name" style="font-size: 14px; font-weight: 600; color: #fff;"><?php echo htmlspecialchars($user['full_name']); ?></div>
                 <div class="user-role" style="font-size: 12px; color: #aaa;"><?php echo htmlspecialchars($user['department_name'] . ' • ' . $user['role_name']); ?></div>
             </div>
+            <div class="nav-item dropdown" style="margin-left: 16px; position: relative;">
+                <span id="nav-notifications" style="cursor: pointer; color: #fff; position: relative;">
+                    <i class="fa-solid fa-bell" style="font-size: 18px;"></i>
+                    <span id="notif-badge" class="badge" style="display:none; position:absolute; top:-8px; right:-10px; background:#f44336; color:#fff; border-radius:10px; padding:2px 6px; font-size:10px; font-weight:bold;">0</span>
+                </span>
+                <div class="dropdown-menu" id="notif-dropdown" style="right: 0; left: auto; width: 300px; max-height: 400px; overflow-y: auto; padding: 0;">
+                    <div style="padding: 10px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; background: #2a2a2a;">
+                        <span style="font-weight: bold; color: #fff;">Notifications</span>
+                        <span style="font-size: 12px; color: #2196f3; cursor: pointer;" onclick="markAllNotifRead()">Mark all read</span>
+                    </div>
+                    <div id="notif-list" style="padding: 10px; font-size: 13px; color: #aaa; text-align: center;">Loading...</div>
+                </div>
+            </div>
+
             <a href="change_password.php" class="btn-logout" title="Change Password" style="margin-left: 16px; color: var(--accent); text-decoration: none; font-size: 13px; font-weight: bold;">
                 Change Password
             </a>
@@ -67,3 +81,56 @@ try {
             </a>
         </div>
     </div>
+    </div>
+
+<script>
+    async function loadNotifications() {
+        try {
+            const res = await fetch('api.php?action=get_notifications');
+            const json = await res.json();
+            if (json.success && json.data) {
+                const unread = json.data.filter(n => n.is_read == 0);
+                const badge = document.getElementById('notif-badge');
+                if (badge) {
+                    badge.innerText = unread.length;
+                    badge.style.display = unread.length > 0 ? 'inline-block' : 'none';
+                }
+                const list = document.getElementById('notif-list');
+                if (list) {
+                    if (json.data.length === 0) {
+                        list.innerHTML = 'No new notifications';
+                    } else {
+                        list.innerHTML = json.data.map(n => `
+                            <div style="padding: 10px; border-bottom: 1px solid #333; background: ${n.is_read == 0 ? '#1a2b3c' : 'transparent'};">
+                                <a href="${n.link || '#'}" onclick="markNotifRead(${n.id})" style="color: #fff; text-decoration: none; display: block;">
+                                    ${n.message}
+                                    <div style="font-size: 11px; color: #888; margin-top: 4px;">${n.created_at}</div>
+                                </a>
+                            </div>
+                        `).join('');
+                    }
+                }
+            }
+        } catch(e) {}
+    }
+    
+    async function markNotifRead(id) {
+        try {
+            await fetch('api.php?action=mark_notification_read', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({id: id})
+            });
+            loadNotifications();
+        } catch(e) {}
+    }
+
+    async function markAllNotifRead() {
+        await markNotifRead(0);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadNotifications();
+        setInterval(loadNotifications, 30000);
+    });
+</script>

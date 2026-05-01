@@ -61,6 +61,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     ui.btnCreate.addEventListener('click', () => window.openAssignmentModal());
 
     switchTab('calendar');
+    
+    // Auto-open assignment if passed in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const openId = urlParams.get('open_id');
+    if (openId) {
+        setTimeout(() => openDetailModal(openId), 500);
+    }
 });
 
 function switchTab(tab) {
@@ -391,8 +398,16 @@ window.openDetailModal = async (id, e) => {
                 <hr style="border-color:#333; margin:15px 0;">
                 <p><b>อุปกรณ์เบิก:</b></p>
                 ${eqHtml}
-                <hr style="border-color:#333; margin:15px 0;">
-        `;
+                <hr style="border-color:#333; margin:15px 0;">`;
+
+        if (a.linked_stories && a.linked_stories.length > 0) {
+            let storiesHtml = '<ul style="padding-left:15px; margin:5px 0; font-size:13px; text-align:left;">';
+            a.linked_stories.forEach(s => {
+                storiesHtml += `<li><a href="index.php?id=${s.id}" target="_blank" style="color:#2196f3;text-decoration:none;">${escapeHTML(s.slug)} <span style="color:#888;font-size:11px;">[${escapeHTML(s.status)}]</span></a></li>`;
+            });
+            storiesHtml += '</ul>';
+            content += `<p><b>ข่าวที่เชื่อมโยง:</b></p>${storiesHtml}<hr style="border-color:#333; margin:15px 0;">`;
+        }
 
         // Approval timeline
         if (a.status === 'REJECTED') {

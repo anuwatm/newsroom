@@ -1,4 +1,5 @@
 <?php
+session_set_cookie_params(['httponly' => true, 'samesite' => 'Strict']);
 session_start();
 require_once 'session_guard.php';
 require_once 'db.php';
@@ -80,3 +81,4 @@ $active_menu = '';
     </div>
 </body>
 </html>
+

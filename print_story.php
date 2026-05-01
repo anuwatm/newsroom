@@ -1,5 +1,7 @@
 <?php
+session_set_cookie_params(['httponly' => true, 'samesite' => 'Strict']);
 session_start();
+require_once 'session_guard.php';
 if (!isset($_SESSION['user'])) { die("Unauthorized"); }
 require 'db.php';
 $id = $_GET['id'] ?? null;
@@ -157,3 +159,4 @@ if (file_exists($file_path)) {
     </script>
 </body>
 </html>
+

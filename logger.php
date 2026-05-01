@@ -13,6 +13,13 @@ function write_log($action, $details = '', $level = 'INFO') {
     $filepath = $log_dir . "/newsroom_{$date}.log";
 
     $ip = $_SERVER['REMOTE_ADDR'] ?? 'UNKNOWN';
+    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        $forwarded = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
+        $forwarded_ip = trim(end($forwarded));
+        if (filter_var($forwarded_ip, FILTER_VALIDATE_IP)) {
+            $ip = $forwarded_ip;
+        }
+    }
 
     if (isset($_SESSION['user'])) {
         $user_id = $_SESSION['user']['employee_id'] ?? 'Unknown';

@@ -1,4 +1,5 @@
 <?php
+session_set_cookie_params(['httponly' => true, 'samesite' => 'Strict']);
 session_start();
 if (!isset($_SESSION['user'])) {
     header("Location: login.php");
@@ -227,3 +228,4 @@ $csrf_token = $_SESSION['csrf_token'];
     <script type="module" src="js/assignment.js?v=1"></script>
 </body>
 </html>
+

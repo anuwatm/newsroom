@@ -1,4 +1,5 @@
 <?php
+session_set_cookie_params(['httponly' => true, 'samesite' => 'Strict']);
 session_start();
 if (!isset($_SESSION['user']) || $_SESSION['user']['role_id'] != 3) {
     header("Location: index.php");
@@ -20,6 +21,7 @@ $csrf_token = $_SESSION['csrf_token'];
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { background-color: #121212; color: #fff; overflow-y: auto !important; }
         .log-app { max-width: 1100px; margin: 0 auto; padding: 40px 20px; }
@@ -93,8 +95,10 @@ $csrf_token = $_SESSION['csrf_token'];
         .log-card {
             background: #1e1e1e; border: 1px solid #333; border-radius: 8px; padding: 20px;
             box-shadow: 0 4px 10px rgba(0,0,0,0.15); display: flex; flex-direction: column; gap: 10px;
-            position: relative; width: 100%; max-width: 480px; box-sizing: border-box;
+            position: relative; width: 100%; max-width: 480px; box-sizing: border-box; transition: all 0.3s ease;
         }
+        .log-card.suspicious { border-color: #f44336; box-shadow: 0 0 15px rgba(244, 67, 54, 0.4); background: #2a1111; }
+        .log-card.new-ip { border-color: #ff9800; box-shadow: 0 0 15px rgba(255, 152, 0, 0.4); }
 
         /* Arrows pointing to the center */
         .log-item.left .log-card::after {
@@ -186,6 +190,11 @@ $csrf_token = $_SESSION['csrf_token'];
             </div>
         </div>
 
+        <div style="background: #1e1e1e; border: 1px solid #333; border-radius: 8px; padding: 20px; margin-bottom: 30px;">
+            <h3 style="margin-top:0; font-size:16px; color:#aaa;">Failed Login Attempts (per hour)</h3>
+            <canvas id="failedLoginsChart" height="60"></canvas>
+        </div>
+
         <div class="timeline-container" id="timeline">
             <div class="no-data">Loading logs...</div>
         </div>
@@ -223,11 +232,46 @@ $csrf_token = $_SESSION['csrf_token'];
                 const json = await res.json();
                 if (json.success) {
                     allLogs = json.data;
+                    renderChart(allLogs);
                     renderLogs(allLogs);
                 } else {
                     document.getElementById('timeline').innerHTML = `<div class="no-data" style="color:#f44336">${json.error}</div>`;
                 }
             } catch(e) {}
+        }
+
+        let chartInstance = null;
+        function renderChart(logs) {
+            const failedLogins = logs.filter(L => L.action === 'FAILED_LOGIN' || L.action === 'LOCKOUT');
+            const counts = {};
+            failedLogins.forEach(L => {
+                // time format is YYYY-MM-DD HH:MM:SS
+                const hour = L.time.substring(0, 13) + ':00';
+                counts[hour] = (counts[hour] || 0) + 1;
+            });
+            const labels = Object.keys(counts).sort();
+            const data = labels.map(l => counts[l]);
+
+            const ctx = document.getElementById('failedLoginsChart').getContext('2d');
+            if (chartInstance) chartInstance.destroy();
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Failed Logins',
+                        data: data,
+                        backgroundColor: 'rgba(244, 67, 54, 0.6)',
+                        borderColor: '#f44336',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: { y: { beginAtZero: true, ticks: { color: '#888', stepSize: 1 } }, x: { ticks: { color: '#888' } } },
+                    plugins: { legend: { display: false } }
+                }
+            });
         }
 
         function toggleDropdown(id) {
@@ -309,10 +353,32 @@ $csrf_token = $_SESSION['csrf_token'];
                 else if (act.includes('EQUIPT') || act.includes('EQUIPMENT')) iconClass = 'fa-solid fa-camera';
                 else if (act.includes('PROGRAM') || act.includes('DEPART')) iconClass = 'fa-solid fa-building';
 
+                let cardClass = '';
+                let alertHtml = '';
+                
+                // Highlight Suspicious Actions
+                if (act === 'RESTORE_STORY_VERSION' || act === 'DELETE_USER' || act === 'DELETE_STORY') {
+                    cardClass = 'suspicious';
+                    alertHtml = '<div style="color:#f44336; font-size:12px; font-weight:bold; margin-bottom:5px;"><i class="fa-solid fa-triangle-exclamation"></i> HIGH RISK ACTION</div>';
+                }
+
+                // New IP Detection for Login
+                if (act === 'LOGIN_SUCCESS') {
+                    // Check if this IP was seen for this user previously (in chronological order, i.e., from bottom of array to this index)
+                    // Wait, logs are newest first. So we look at logs after this index.
+                    const previousLogs = logsArray.slice(index + 1);
+                    const ipSeenBefore = previousLogs.some(prev => prev.user === L.user && prev.ip === L.ip && prev.action === 'LOGIN_SUCCESS');
+                    if (!ipSeenBefore && previousLogs.length > 0) { // Only flag if we have some history
+                        cardClass = 'new-ip';
+                        alertHtml = '<div style="color:#ff9800; font-size:12px; font-weight:bold; margin-bottom:5px;"><i class="fa-solid fa-location-crosshairs"></i> LOGIN FROM NEW IP</div>';
+                    }
+                }
+
                 html += `
                 <div class="log-item ${alignClass} level-${L.level}" id="log-item-${index}">
                     <div class="timeline-badge"><i class="${iconClass}"></i></div>
-                    <div class="log-card">
+                    <div class="log-card ${cardClass}">
+                        ${alertHtml}
                         <div class="log-meta">
                             <span class="badge ${bagdeClass}">${L.level}</span>
                             <span class="log-time"><i class="fa-regular fa-clock"></i> ${L.time}</span>
@@ -349,3 +415,4 @@ $csrf_token = $_SESSION['csrf_token'];
     </script>
 </body>
 </html>
+

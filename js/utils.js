@@ -1,15 +1,7 @@
-export function countWords(str) {
+export function countCharacters(str) {
     if (!str.trim()) return 0;
-    if (typeof Intl !== 'undefined' && Intl.Segmenter) {
-        const segmenter = new Intl.Segmenter('th', { granularity: 'word' });
-        const segments = segmenter.segment(str);
-        let wordCount = 0;
-        for (const segment of segments) {
-            if (segment.isWordLike) wordCount++;
-        }
-        return wordCount;
-    }
-    return str.trim().split(/\s+/).length;
+    // Count characters excluding spaces and newlines
+    return str.replace(/[\s\n\r]/g, '').length;
 }
 
 export function formatTime(totalSeconds) {

@@ -1,14 +1,14 @@
-import { Elements, WPM_RATE } from './config.js?v=3';
-import { countWords, formatTime } from './utils.js?v=3';
+import { Elements, Config } from './config.js?v=3';
+import { countCharacters, formatTime } from './utils.js?v=3';
 import { setupAutocompleteEditor } from './autocomplete.js?v=3';
 
 export function updateCalculations() {
     let totalEstimatedSeconds = 0;
     document.querySelectorAll('.script-row').forEach(row => {
         const textInput = row.querySelector('.read-input').value;
-        const words = countWords(textInput);
-        const estSec = Math.ceil(words / WPM_RATE);
-        row.querySelector('.word-count').innerText = words;
+        const chars = countCharacters(textInput);
+        const estSec = Math.ceil(chars / (Config.CHARS_PER_SEC || 40));
+        row.querySelector('.word-count').innerText = chars + ' chars';
         row.querySelector('.row-time').innerText = estSec;
         totalEstimatedSeconds += estSec;
     });

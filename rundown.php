@@ -1,4 +1,5 @@
 <?php
+session_set_cookie_params(['httponly' => true, 'samesite' => 'Strict']);
 session_start();
 if (!isset($_SESSION['user'])) {
     header("Location: login.php");
@@ -115,6 +116,13 @@ $csrf_token = $_SESSION['csrf_token'];
         .dragging { opacity: 0.9; background-color: #3f3f3f; box-shadow: 0 8px 20px rgba(0,0,0,0.6); transform: scale(1.02); z-index: 10; }
         .over { border-top: 2px solid #4caf50; }
 
+        @keyframes flashAlert {
+            0% { opacity: 1; color: #f44336; }
+            50% { opacity: 0.3; color: #fff; }
+            100% { opacity: 1; color: #f44336; }
+        }
+        .flash-alert { animation: flashAlert 1s infinite; }
+
         /* Top Nav replication */
         .app-header { 
             background: rgba(26, 26, 26, 0.9); 
@@ -228,6 +236,7 @@ $csrf_token = $_SESSION['csrf_token'];
                         <button id="btn-add-break" title="Add Commercial Break" class="btn btn-secondary" style="background:#555; border:none; padding:10px 16px; border-radius:8px;"><i class="fa-solid fa-film"></i></button>
                         <button id="btn-lock-board" title="Lock Rundown" class="btn btn-secondary" style="padding:10px 16px; border-radius:8px;"><i class="fa-solid fa-lock"></i></button>
                     <?php endif; ?>
+                    <button id="btn-trt-alert" class="btn btn-secondary" title="Toggle TRT Alert" style="padding:10px 16px; border-radius:8px; color: #4caf50;"><i class="fa-solid fa-bell"></i></button>
                     <button id="btn-print-rundown" class="btn btn-secondary" title="Print Rundown" style="padding:10px 16px; border-radius:8px;"><i class="fa-solid fa-print"></i></button>
                 </div>
             </div>
@@ -272,3 +281,4 @@ $csrf_token = $_SESSION['csrf_token'];
     <script src="js/rundown.js?v=2"></script>
 </body>
 </html>
+

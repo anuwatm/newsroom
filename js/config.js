@@ -1,4 +1,4 @@
-export const WPM_RATE = 3; // Words-per-second (WPS), not WPM. 3 WPS = 180 words per minute.
+export const Config = { CHARS_PER_SEC: 40 };
 
 export const Elements = {
     scriptBody: document.getElementById('script-body'),
@@ -10,6 +10,7 @@ export const Elements = {
     metaSlug: document.getElementById('meta-slug'),
     metaDepartment: document.getElementById('meta-department'),
     metaAssignment: document.getElementById('meta-assignment'),
+    btnViewAssignment: document.getElementById('btn-view-assignment'),
     metaReporter: document.getElementById('meta-reporter'),
     metaStatus: document.getElementById('meta-status'),
     metaAnchor: document.getElementById('meta-anchor'),

@@ -58,6 +58,10 @@ window.loadAssignmentsList = async (deptId) => {
             });
         }
         if (curVal) Elements.metaAssignment.value = curVal;
+        
+        if (Elements.btnViewAssignment) {
+            Elements.btnViewAssignment.style.display = Elements.metaAssignment.value ? 'inline-block' : 'none';
+        }
     } catch (e) {}
 };
 
@@ -97,7 +101,10 @@ window.loadVersions = async () => {
                     <b>Version ${v.version}</b><br>
                     <small style="color:#aaa;">${new Date(v.time * 1000).toLocaleString()}</small>
                 </div>
-                <button class="btn btn-outline" style="border:none; color:#4caf50;" onclick="window.restoreVersion(${v.version})">Restore</button>
+                <div>
+                    <button class="btn btn-outline" style="border:none; color:#2196f3; margin-right:5px;" onclick="window.viewDiff(${v.version})">Diff View</button>
+                    <button class="btn btn-outline" style="border:none; color:#4caf50;" onclick="window.restoreVersion(${v.version})">Restore</button>
+                </div>
             </div>`;
         });
         if (Elements.versionsList) Elements.versionsList.innerHTML = html || '<div style="color:#aaa; text-align:center;">No version history.</div>';
@@ -114,6 +121,42 @@ window.restoreVersion = async (version) => {
         });
         window.location.reload();
     } catch (e) {}
+};
+
+window.viewDiff = async (version) => {
+    try {
+        const res1 = await fetch(`api.php?action=get_story&id=${State.currentStoryId}`);
+        const currentJson = await res1.json();
+        
+        const res2 = await fetch(`api.php?action=get_story_version_data&id=${State.currentStoryId}&version=${version}`);
+        const vJson = await res2.json();
+
+        if (currentJson.success && vJson.success) {
+            const currentAnchor = currentJson.data.metadata.anchor || '';
+            const oldAnchor = vJson.data.metadata.anchor || '';
+            
+            let diffHtml = '<div style="background: #111; padding: 20px; border-radius: 8px; font-family: \'Sarabun\', sans-serif; font-size: 16px; line-height: 1.8;">';
+            if (window.Diff) {
+                const diff = window.Diff.diffWords(oldAnchor, currentAnchor);
+                diff.forEach((part) => {
+                    const color = part.added ? '#4caf50' : part.removed ? '#f44336' : '#fff';
+                    const bg = part.added ? 'rgba(76, 175, 80, 0.2)' : part.removed ? 'rgba(244, 67, 54, 0.2)' : 'transparent';
+                    const textDeco = part.removed ? 'line-through' : 'none';
+                    diffHtml += `<span style="color: ${color}; background: ${bg}; text-decoration: ${textDeco}; padding: 0 4px; border-radius: 4px;">${escapeHTML(part.value).replace(/\\n/g, '<br>')}</span>`;
+                });
+            } else {
+                diffHtml += '<p style="color:#f44336;">jsdiff library not loaded</p>';
+            }
+            diffHtml += '</div>';
+
+            Elements.previewTitle.innerText = `Version Comparison: v${version} (Old) vs Current`;
+            Elements.previewBody.innerHTML = diffHtml;
+            Elements.btnLoadPreview.style.display = 'none';
+            Elements.modal.style.display = 'flex';
+        }
+    } catch (e) {
+        console.error(e);
+    }
 };
 
 async function loadStory(id) {
@@ -168,7 +211,12 @@ async function loadStory(id) {
             if (Elements.metaSlug) Elements.metaSlug.value = meta.slug || '';
             if (Elements.metaDepartment) Elements.metaDepartment.value = meta.department || '';
             if (window.loadAssignmentsList && meta.department) await window.loadAssignmentsList(meta.department);
-            if (Elements.metaAssignment) Elements.metaAssignment.value = meta.assignment || '';
+            if (Elements.metaAssignment) {
+                Elements.metaAssignment.value = meta.assignment || '';
+                if (Elements.btnViewAssignment) {
+                    Elements.btnViewAssignment.style.display = Elements.metaAssignment.value ? 'inline-block' : 'none';
+                }
+            }
             if (Elements.metaReporter) Elements.metaReporter.value = meta.reporter || '';
             if (Elements.metaStatus) Elements.metaStatus.value = meta.status || 'DRAFT';
             if (Elements.metaAnchor) Elements.metaAnchor.value = meta.anchor || '';
@@ -353,13 +401,64 @@ function startLockHeartbeat(id) {
     }, 2 * 60 * 1000);
 }
 
+function startViewersPing(id) {
+    if (State.viewersInterval) clearInterval(State.viewersInterval);
+    const ping = async () => {
+        try {
+            const res = await fetch('api.php?action=ping_viewer', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ id: id })
+            });
+            const json = await res.json();
+            const ind = document.getElementById('active-viewers-indicator');
+            const list = document.getElementById('active-viewers-list');
+            if (json.success && json.viewers && json.viewers.length > 0) {
+                list.innerText = json.viewers.join(', ');
+                ind.style.display = 'inline-block';
+            } else {
+                if (ind) ind.style.display = 'none';
+            }
+        } catch (e) {}
+    };
+    ping();
+    State.viewersInterval = setInterval(ping, 15000);
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const cfgRes = await fetch('api.php?action=get_system_settings');
+        const cfgJson = await cfgRes.json();
+        if (cfgJson.success && cfgJson.data.read_time_chars_per_sec) {
+            import('./config.js?v=3').then(module => {
+                module.Config.CHARS_PER_SEC = parseInt(cfgJson.data.read_time_chars_per_sec) || 40;
+                updateCalculations();
+            });
+        }
+    } catch (e) {}
+
     initAutocomplete(updateCalculations);
     initArchiveUI();
     initMyStoryUI();
     setupPrint(saveStory);
 
     if (Elements.btnAddRow) Elements.btnAddRow.addEventListener('click', () => addNewRow());
+    if (Elements.metaAssignment) {
+        Elements.metaAssignment.addEventListener('change', () => {
+            if (Elements.btnViewAssignment) {
+                Elements.btnViewAssignment.style.display = Elements.metaAssignment.value ? 'inline-block' : 'none';
+            }
+        });
+    }
+
+    if (Elements.btnViewAssignment) {
+        Elements.btnViewAssignment.addEventListener('click', () => {
+            if (Elements.metaAssignment.value) {
+                window.open(`assignment.php?open_id=${Elements.metaAssignment.value}`, '_blank');
+            }
+        });
+    }
+
     if (Elements.btnSave) Elements.btnSave.addEventListener('click', () => saveStory(false));
     if (Elements.newBtnEl) {
         Elements.newBtnEl.addEventListener('click', async (e) => {
@@ -430,6 +529,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }, 700);
         }
+        startViewersPing(id);
     } else {
         if (window.currentUser) {
             if (Elements.metaDepartment) Elements.metaDepartment.value = window.currentUser.departmentId || '';
@@ -506,6 +606,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     window.addEventListener('beforeunload', () => {
         if (State.lockInterval) clearInterval(State.lockInterval);
+        if (State.viewersInterval) clearInterval(State.viewersInterval);
         if (State.currentStoryId && !State.isReadOnly) {
             unlockStory(State.currentStoryId);
         }

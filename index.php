@@ -1,4 +1,5 @@
 <?php
+session_set_cookie_params(['httponly' => true, 'samesite' => 'Strict']);
 session_start();
 if (!isset($_SESSION['user'])) {
     header("Location: login.php");
@@ -22,6 +23,7 @@ $csrf_token = $_SESSION['csrf_token'];
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsdiff/7.0.0/diff.min.js"></script>
 </head>
 <body>
     <!-- Print-only header -->
@@ -49,9 +51,12 @@ $csrf_token = $_SESSION['csrf_token'];
                 <select id="meta-department" class="meta-input">
                     <!-- Loaded via JS -->
                 </select>
-                <select id="meta-assignment" class="meta-input">
-                    <option value="">-- ไม่ผูกกับหมายข่าว --</option>
-                </select>
+                <div style="display:flex; gap: 4px;">
+                    <select id="meta-assignment" class="meta-input">
+                        <option value="">-- ไม่ผูกกับหมายข่าว --</option>
+                    </select>
+                    <button id="btn-view-assignment" class="btn-outline" style="border:none; color:#2196f3; display:none; background: #222; padding: 0 10px; border-radius: 4px;" title="View Assignment details"><i class="fa-solid fa-external-link"></i></button>
+                </div>
                 <input type="text" id="meta-reporter" placeholder="Reporter" class="meta-input" list="reporter-list">
                 <datalist id="reporter-list"></datalist>
                 <select id="meta-status" class="meta-input">
@@ -63,6 +68,9 @@ $csrf_token = $_SESSION['csrf_token'];
             </div>
         </div>
         <div class="controls-section">
+            <div id="active-viewers-indicator" style="display:none; color: #4caf50; font-size: 12px; margin-right: 15px; font-weight: bold; background: rgba(76,175,80,0.1); padding: 4px 8px; border-radius: 4px;">
+                <i class="fa-solid fa-eye"></i> กำลังดู: <span id="active-viewers-list"></span>
+            </div>
             <div class="time-display">
                 <span class="time-label">TOTAL EST. TIME</span>
                 <span id="total-time">00:00</span>

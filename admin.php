@@ -1,4 +1,5 @@
 <?php
+session_set_cookie_params(['httponly' => true, 'samesite' => 'Strict']);
 session_start();
 if (!isset($_SESSION['user'])) {
     header("Location: login.php");
@@ -73,12 +74,25 @@ $csrf_token = $_SESSION['csrf_token'];
                 <!-- Loaded via JS -->
             </tbody>
         </table>
+
+        <div class="admin-header" style="margin-top: 40px;">
+            <h2>System Configuration</h2>
+            <button class="btn btn-edit" onclick="saveSettings()">Save Settings</button>
+        </div>
+        <div style="background: #222; padding: 20px; border-radius: 8px;">
+            <label style="display:block; text-align:left; color:#ccc; font-size:14px; margin-bottom: 8px;">Read Time Speed (Characters per Second)</label>
+            <input id="cfg-read-speed" type="number" class="form-control" style="width: 200px; background:#333; color:#fff; border:1px solid #444; padding:8px; border-radius:4px;" value="40">
+            <div style="color: #888; font-size: 12px; margin-top: 5px;">* ใช้สำหรับคำนวณเวลาอ่าน (TRT) อัตโนมัติเวลาที่นักข่าวพิมพ์เนื้อหาข่าว (ค่ามาตรฐานภาษาไทยคือ 40)</div>
+        </div>
     </div>
 
     <script>
         const csrfToken = <?php echo json_encode($csrf_token, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
 
-        document.addEventListener('DOMContentLoaded', loadPrograms);
+        document.addEventListener('DOMContentLoaded', () => {
+            loadPrograms();
+            loadSettings();
+        });
         
         const escapeHTML = (str) => {
             if (!str) return '';
@@ -193,6 +207,42 @@ $csrf_token = $_SESSION['csrf_token'];
                 } catch (e) {}
             }
         }
+
+        async function loadSettings() {
+            try {
+                const res = await fetch('api.php?action=get_system_settings');
+                const json = await res.json();
+                if (json.success && json.data.read_time_chars_per_sec) {
+                    document.getElementById('cfg-read-speed').value = json.data.read_time_chars_per_sec;
+                }
+            } catch (e) {}
+        }
+
+        async function saveSettings() {
+            const speed = document.getElementById('cfg-read-speed').value;
+            try {
+                const res = await fetch('api.php?action=save_system_settings', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        csrf_token: csrfToken,
+                        settings: {
+                            'read_time_chars_per_sec': speed
+                        }
+                    })
+                });
+                const json = await res.json();
+                if (json.success) {
+                    Swal.fire({
+                        toast: true, position: 'top-end', showConfirmButton: false, timer: 3000,
+                        icon: 'success', title: 'Settings Saved'
+                    });
+                } else {
+                    Swal.fire('Error', json.error || 'Failed to save', 'error');
+                }
+            } catch (e) {}
+        }
     </script>
 </body>
 </html>
+

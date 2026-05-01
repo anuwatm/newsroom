@@ -10,6 +10,8 @@ let isDragging = false;
 let draggedRowId = null;
 let latestSnapshot = "";
 let countdownInterval = null;
+let isTrtAlertEnabled = true;
+let trtAlertPlayed = false;
 
 // Format seconds to MM:SS
 function formatTime(secs) {
@@ -75,6 +77,15 @@ document.addEventListener('DOMContentLoaded', () => {
         sInput.addEventListener('keyup', (e) => {
             clearTimeout(storySearchTimeout);
             storySearchTimeout = setTimeout(() => doStorySearch(e.target.value), 400);
+        });
+    }
+
+    const btnTrtAlert = document.getElementById('btn-trt-alert');
+    if (btnTrtAlert) {
+        btnTrtAlert.addEventListener('click', () => {
+            isTrtAlertEnabled = !isTrtAlertEnabled;
+            btnTrtAlert.style.color = isTrtAlertEnabled ? '#4caf50' : '#888';
+            btnTrtAlert.innerHTML = isTrtAlertEnabled ? '<i class="fa-solid fa-bell"></i>' : '<i class="fa-solid fa-bell-slash"></i>';
         });
     }
     
@@ -335,6 +346,27 @@ function renderBoard(data) {
         trtValElem.className = 'stat-value val-green';
         trtSubElem.className = 'stat-sub val-white';
         trtSubElem.innerText = `ขาดอีก ${formatTime(currentTargetTrt - activeTotalTrt)} (เป้า ${formatTime(currentTargetTrt)})`;
+    }
+
+    if (isTrtAlertEnabled && Math.abs(activeTotalTrt - currentTargetTrt) > 30) {
+        trtValElem.classList.add('flash-alert');
+        if (!trtAlertPlayed) {
+            trtAlertPlayed = true;
+            try {
+                const audio = new Audio('data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU'); // dummy short beep or just fallback to browser beep
+                // It's better to use an AudioContext oscillator for a reliable beep without external files
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(800, ctx.currentTime);
+                osc.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.2);
+            } catch(e) {}
+        }
+    } else {
+        trtValElem.classList.remove('flash-alert');
+        trtAlertPlayed = false;
     }
     
     // Bind toggle buttons

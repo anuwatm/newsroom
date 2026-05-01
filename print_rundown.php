@@ -1,4 +1,5 @@
 <?php
+session_set_cookie_params(['httponly' => true, 'samesite' => 'Strict']);
 session_start();
 require_once 'session_guard.php';
 require_once 'db.php';
@@ -6,6 +7,11 @@ require_once 'db.php';
 if (!isset($_SESSION['user'])) {
     header("Location: login.php");
     exit;
+}
+$user = $_SESSION['user'];
+$role_id = intval($user['role_id']);
+if (!in_array($role_id, [2, 3])) {
+    die("Permission Denied: Only Editors can print rundown.");
 }
 
 $id = intval($_GET['id'] ?? 0);
@@ -18,12 +24,12 @@ $rundown = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$rundown) die("Rundown not found.");
 
 $stmtStories = $db->prepare("
-    SELECT r.*, s.title, s.metadata, s.estimated_time as trt, s.content, s.status, s.reporter, d.name as dept_name
+    SELECT r.*, s.slug as title, s.format, s.estimated_time as trt, s.status, s.reporter, d.name as dept_name, s.current_version, s.id as story_id
     FROM rundown_stories r
     JOIN stories s ON r.story_id = s.id
     LEFT JOIN departments d ON s.department_id = d.id
     WHERE r.rundown_id = ?
-    ORDER BY r.sort_order ASC
+    ORDER BY r.order_index ASC
 ");
 $stmtStories->execute([$id]);
 $items = $stmtStories->fetchAll(PDO::FETCH_ASSOC);
@@ -32,7 +38,7 @@ $items = $stmtStories->fetchAll(PDO::FETCH_ASSOC);
 $totalTrtSeconds = 0;
 foreach ($items as $itm) {
     if ($itm['is_break']) {
-        $totalTrtSeconds += ($rundown['commercial_break_duration'] ?? 180);
+        $totalTrtSeconds += ($itm['break_duration'] ?? 180);
     } else {
         $totalTrtSeconds += intval($itm['trt']);
     }
@@ -59,6 +65,36 @@ function extractFirstCueType($contentJson) {
     }
     return '';
 }
+
+if (isset($_GET['action']) && $_GET['action'] === 'export') {
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename=rundown_' . $id . '_' . date('Ymd_His') . '.csv');
+    // Output BOM for Excel UTF-8 compatibility
+    echo "\xEF\xBB\xBF";
+    $output = fopen('php://output', 'w');
+    fputcsv($output, ['Order', 'Format', 'Slug/Title', 'Director Cues', 'Reporter', 'TRT']);
+    
+    $order = 1;
+    foreach ($items as $itm) {
+        if ($itm['is_break']) {
+            $breakTrt = $itm['break_duration'] ?? 180;
+            fputcsv($output, [$order++, 'COMMERCIAL', '*** COMMERCIAL BREAK ***', '-', '-', formatTrt($breakTrt)]);
+        } else {
+            $format = $itm['format'] ?? 'N/A';
+            $contentJson = '';
+            $version = $itm['current_version'] ?? 1;
+            $storyId = $itm['story_id'] ?? 0;
+            $file_path = __DIR__ . "/data/stories/story_{$storyId}_v{$version}.json";
+            if (file_exists($file_path)) {
+                $contentJson = file_get_contents($file_path);
+            }
+            $dirCues = extractFirstCueType($contentJson);
+            fputcsv($output, [$order++, $format, $itm['title'], $dirCues, $itm['reporter'] . ' (' . $itm['dept_name'] . ')', formatTrt($itm['trt'])]);
+        }
+    }
+    fclose($output);
+    exit;
+}
 ?>
 <!DOCTYPE html>
 <html lang="th">
@@ -77,16 +113,18 @@ function extractFirstCueType($contentJson) {
         th, td { border: 1px solid #000; padding: 6px; text-align: left; }
         th { background: #f0f0f0; font-weight: bold; }
         tr.break-row td { background: #e0e0e0; font-weight: bold; font-style: italic; }
-        .printbtn { padding: 10px 20px; font-size: 16px; cursor: pointer; background:#4caf50; color:#fff; border:none; border-radius:4px; float:right; }
+        .printbtn { padding: 10px 20px; font-size: 16px; cursor: pointer; background:#4caf50; color:#fff; border:none; border-radius:4px; float:right; margin-left: 10px; }
+        .csvbtn { padding: 10px 20px; font-size: 16px; cursor: pointer; background:#2196f3; color:#fff; border:none; border-radius:4px; float:right; text-decoration: none; }
         @media print {
             body { padding: 0; }
-            .printbtn { display: none; }
+            .printbtn, .csvbtn { display: none; }
         }
     </style>
 </head>
 <body onload="window.print()">
     <div class="print-container">
         <button class="printbtn" onclick="window.print()">🖨 พิมพ์ (Print)</button>
+        <a href="?id=<?php echo $id; ?>&action=export" class="csvbtn">📊 Export CSV</a>
         <div style="clear:both;"></div>
 
         <div class="header">
@@ -95,7 +133,7 @@ function extractFirstCueType($contentJson) {
         </div>
 
         <div class="details-box">
-            <div><b>Target Duration:</b> <?php echo $rundown['target_duration_minutes']; ?> mins</div>
+            <div><b>Target Duration:</b> N/A</div>
             <div><b>Total TRT:</b> <?php echo $totalTrtFormatted; ?></div>
             <div><b>Breaks:</b> <?php echo $rundown['commercial_break_count'] ?? 0; ?></div>
         </div>
@@ -116,7 +154,7 @@ function extractFirstCueType($contentJson) {
                 $order = 1;
                 foreach ($items as $itm): 
                     if ($itm['is_break']):
-                        $breakTrt = $rundown['commercial_break_duration'] ?? 180;
+                        $breakTrt = $itm['break_duration'] ?? 180;
                 ?>
                 <tr class="break-row">
                     <td><?php echo $order++; ?></td>
@@ -127,9 +165,15 @@ function extractFirstCueType($contentJson) {
                     <td><?php echo formatTrt($breakTrt); ?></td>
                 </tr>
                 <?php else: 
-                    $meta = json_decode($itm['metadata'], true);
-                    $format = $meta['format'] ?? 'N/A';
-                    $dirCues = extractFirstCueType($itm['content']);
+                    $format = $itm['format'] ?? 'N/A';
+                    $contentJson = '';
+                    $version = $itm['current_version'] ?? 1;
+                    $storyId = $itm['story_id'] ?? 0;
+                    $file_path = __DIR__ . "/data/stories/story_{$storyId}_v{$version}.json";
+                    if (file_exists($file_path)) {
+                        $contentJson = file_get_contents($file_path);
+                    }
+                    $dirCues = extractFirstCueType($contentJson);
                 ?>
                 <tr>
                     <td><?php echo $order++; ?></td>
@@ -145,3 +189,4 @@ function extractFirstCueType($contentJson) {
     </div>
 </body>
 </html>
+
