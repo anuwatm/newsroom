@@ -78,6 +78,8 @@ $csrf_token = $_SESSION['csrf_token'];
             <div class="btn-group">
                 <button id="btn-comments" class="btn btn-secondary" title="Comments" style="position:relative; overflow:visible;"><i class="fa-regular fa-comment"></i> <span id="comment-badge" style="display:none; position:absolute; top:-5px; right:-5px; background:#f44336; color:#fff; border-radius:10px; padding:2px 6px; font-size:10px; font-weight:bold;">0</span></button>
                 <button id="btn-versions" class="btn btn-secondary" title="Version History"><i class="fa-solid fa-clock-rotate-left"></i></button>
+                <button id="btn-prompter" class="btn btn-dark" style="background-color:#1e1e1e; border:1px solid #444;" onclick="openPrompter()"><i class="fa-solid fa-tv"></i> PROMPTER</button>
+                <button id="btn-publish" class="btn btn-warning" onclick="publishDigital()"><i class="fa-solid fa-globe"></i> PUBLISH DIGITAL</button>
                 <button id="btn-print" class="btn btn-secondary">PRINT STORY</button>
                 <button id="btn-save" class="btn btn-primary">SAVE STORY</button>
             </div>

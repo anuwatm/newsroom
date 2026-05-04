@@ -1,0 +1,16 @@
+{
+  "name": "Newsroom System",
+  "short_name": "Newsroom",
+  "description": "Professional Dual-Column Newsroom Editor",
+  "start_url": "./index.php",
+  "display": "standalone",
+  "background_color": "#121212",
+  "theme_color": "#1e293b",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2965/2965306.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

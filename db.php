@@ -26,6 +26,8 @@ try {
     $db->exec("PRAGMA synchronous = NORMAL;");
     $db->exec("PRAGMA temp_store = MEMORY;");
     $db->exec("PRAGMA cache_size = -64000;"); // Use 64MB of RAM for cache
+    $db->exec("PRAGMA busy_timeout = 5000;");
+    $db->exec("PRAGMA mmap_size = 30000000000;");
 
     // 1. Roles Table
     $db->exec("CREATE TABLE IF NOT EXISTS roles (
@@ -273,6 +275,11 @@ try {
         $db->exec("INSERT INTO system_settings (setting_key, setting_value) VALUES ('read_time_chars_per_sec', '40')");
     }
 
+    // CMS Digital Publishing Extensions
+    try { $db->exec("ALTER TABLE stories ADD COLUMN is_published INTEGER DEFAULT 0"); } catch (Exception $e) {}
+    try { $db->exec("ALTER TABLE stories ADD COLUMN digital_url TEXT"); } catch (Exception $e) {}
+
 } catch (PDOException $e) {
     die("Database Connection failed: " . $e->getMessage());
 }
+

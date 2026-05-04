@@ -6,35 +6,38 @@
 
 require_once 'db.php';
 header('Content-Type: application/json');
+header('X-Frame-Options: DENY');
+header('X-Content-Type-Options: nosniff');
+header('X-XSS-Protection: 1; mode=block');
 
 // --- API Rate Limiting ---
 $ip = $_SERVER['REMOTE_ADDR'] ?? 'UNKNOWN';
 if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
     $forwarded = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
-    $forwarded_ip = trim(end($forwarded));
+    $forwarded_ip = trim(reset($forwarded));
     if (filter_var($forwarded_ip, FILTER_VALIDATE_IP)) {
         $ip = $forwarded_ip;
     }
 }
 
+$currentTime = time();
+if (mt_rand(1, 100) <= 5) {
+    $db->exec("DELETE FROM api_rate_limits WHERE last_reset < " . ($currentTime - 3600));
+}
+
+$db->prepare("UPDATE api_rate_limits SET hits = hits + 1 WHERE ip = ? AND ? - last_reset <= 60")->execute([$ip, $currentTime]);
 $stmt = $db->prepare("SELECT hits, last_reset FROM api_rate_limits WHERE ip = ?");
 $stmt->execute([$ip]);
 $rl = $stmt->fetch(PDO::FETCH_ASSOC);
-$currentTime = time();
 
 if (!$rl) {
     $db->prepare("INSERT INTO api_rate_limits (ip, hits, last_reset) VALUES (?, 1, ?)")->execute([$ip, $currentTime]);
-} else {
-    if ($currentTime - $rl['last_reset'] > 60) {
-        $db->prepare("UPDATE api_rate_limits SET hits = 1, last_reset = ? WHERE ip = ?")->execute([$currentTime, $ip]);
-    } else {
-        if ($rl['hits'] >= 200) {
-            http_response_code(429);
-            echo json_encode(['success' => false, 'error' => 'Rate limit exceeded (200 requests per minute)']);
-            exit;
-        }
-        $db->prepare("UPDATE api_rate_limits SET hits = hits + 1 WHERE ip = ?")->execute([$ip]);
-    }
+} elseif ($currentTime - $rl['last_reset'] > 60) {
+    $db->prepare("UPDATE api_rate_limits SET hits = 1, last_reset = ? WHERE ip = ?")->execute([$currentTime, $ip]);
+} elseif ($rl['hits'] > 200) {
+    http_response_code(429);
+    echo json_encode(['success' => false, 'error' => 'Rate limit exceeded (200 requests per minute)']);
+    exit;
 }
 // -------------------------
 
@@ -516,9 +519,11 @@ if ($method === 'POST' && $action === 'save_story') {
         
         $stmtRunStore = $db->prepare("INSERT INTO rundown_stories (rundown_id, story_id, order_index, is_break, break_duration) VALUES (?, ?, ?, 1, 180)");
         
+        $db->beginTransaction();
         for ($i = 0; $i < $breakCount; $i++) {
             $stmtRunStore->execute([$rundownId, $breakStoryId, $i + 1]);
         }
+        $db->commit();
     }
     
     write_log('CREATE_RUNDOWN', "Created rundown ID: {$rundownId} ({$name})");
@@ -1986,26 +1991,12 @@ if ($method === 'POST' && $action === 'save_story') {
     write_log('ADD_COMMENT', "Added comment to story ID {$storyId}");
     echo json_encode(['success' => true]);
 
-} elseif ($method === 'GET' && $action === 'check_equipment_availability') {
-    $date = trim($_GET['date'] ?? '');
-    $equip = trim($_GET['equipment'] ?? '');
-    $qty = intval($_GET['qty'] ?? 1);
-    
-    $stmtM = $db->prepare("SELECT total_units FROM equipment_master WHERE name = ?");
-    $stmtM->execute([$equip]);
-    $total = $stmtM->fetchColumn();
-    if ($total === false) {
-        echo json_encode(['success' => true, 'available' => false, 'error' => 'Equipment not found']); exit;
-    }
-    
-    $stmtU = $db->prepare("SELECT SUM(e.quantity) FROM assignment_equipment e JOIN assignments a ON e.assignment_id = a.id JOIN assignment_trips t ON a.id = t.assignment_id WHERE t.trip_date = ? AND a.status IN ('PENDING', 'APPROVED') AND e.equipment_name = ?");
-    $stmtU->execute([$date, $equip]);
-    $used = intval($stmtU->fetchColumn());
-    
-    $available = ($total - $used) >= $qty;
-    echo json_encode(['success' => true, 'available' => $available, 'remaining' => ($total - $used)]);
 
 } elseif ($method === 'GET' && $action === 'get_system_settings') {
+    $user = $_SESSION['user'];
+    if ($user['role_id'] != 3) {
+        echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
+    }
     $stmt = $db->query("SELECT setting_key, setting_value FROM system_settings");
     $settings = [];
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
@@ -2015,14 +2006,19 @@ if ($method === 'POST' && $action === 'save_story') {
 
 } elseif ($method === 'POST' && $action === 'save_system_settings') {
     $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']); exit;
+    }
     $user = $_SESSION['user'];
     if ($user['role_id'] != 3) {
         echo json_encode(['success' => false, 'error' => 'Permission Denied']); exit;
     }
+    $stmt = $db->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value");
+    $db->beginTransaction();
     foreach ($data['settings'] as $key => $val) {
-        $stmt = $db->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value");
         $stmt->execute([$key, strval($val)]);
     }
+    $db->commit();
     write_log('SAVE_SETTINGS', 'Updated system settings');
     echo json_encode(['success' => true]);
 
@@ -2055,7 +2051,6 @@ if ($method === 'POST' && $action === 'save_story') {
         $empId = $user['employee_id'] ?? $user['id'] ?? $user['full_name'];
         $name = $user['full_name'] ?? $empId;
         $now = time();
-        $db->exec("CREATE TABLE IF NOT EXISTS active_viewers (story_id INTEGER, user_id TEXT, user_name TEXT, last_seen INTEGER, PRIMARY KEY(story_id, user_id))");
         $stmt = $db->prepare("INSERT INTO active_viewers (story_id, user_id, user_name, last_seen) VALUES (?, ?, ?, ?) ON CONFLICT(story_id, user_id) DO UPDATE SET last_seen = excluded.last_seen");
         $stmt->execute([$storyId, $empId, $name, $now]);
         $db->exec("DELETE FROM active_viewers WHERE last_seen < " . ($now - 30));
@@ -2066,6 +2061,28 @@ if ($method === 'POST' && $action === 'save_story') {
     } else {
         echo json_encode(['success' => false]);
     }
+
+} elseif ($method === 'POST' && $action === 'publish_to_cms') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!isset($data['csrf_token']) || $data['csrf_token'] !== $_SESSION['csrf_token']) {
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token.']); exit;
+    }
+    $storyId = intval($data['id'] ?? 0);
+    $headline = trim($data['headline'] ?? '');
+    
+    if (!$storyId || empty($headline)) {
+        echo json_encode(['success' => false, 'error' => 'Missing required data']); exit;
+    }
+    
+    // Simulate publishing to a remote CMS (e.g., WordPress REST API)
+    // In a real app, we would make a cURL request here.
+    $mockDigitalUrl = "https://news.local/article/" . $storyId . "-" . time();
+    
+    $stmt = $db->prepare("UPDATE stories SET is_published = 1, digital_url = ? WHERE id = ?");
+    $stmt->execute([$mockDigitalUrl, $storyId]);
+    
+    write_log('PUBLISH_CMS', "Published story ID {$storyId} to digital platform.");
+    echo json_encode(['success' => true, 'url' => $mockDigitalUrl]);
 
 } else {
     echo json_encode(['success' => false, 'error' => 'Invalid Action']);

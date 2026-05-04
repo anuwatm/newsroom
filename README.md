@@ -96,12 +96,15 @@
 
 14. **ระบบรักษาความปลอดภัยประสิทธิภาพสูง (Security & Performance Optimization)**
     - โครงสร้างป้องกัน Directory Traversal ล็อกไฟล์ Database และประวัติ JSON ผ่าน `.htaccess`
-    - ลบจุดบอด N+1 Database Query ด้วยเอนจิน **O(1) Bulk Array Fetching** ทำให้การโหลด Dashboard หมายข่าวตอบสนองรวดเร็วทวีคูณแม้มีข้อมูลตารางคูณกันมหาศาล
-    - ระบบขจัดจุดอ่อน SQL Injection ด้วย **Prepared Statements บริสุทธิ์** ในทุกช่องทาง ลดช่องโหว่การโจรกรรมฐานข้อมูลเป็น 0% ผนวกเสริม Data Integrity Constraints ป้องกันข้อมูลแตกหักเวลาแก้ไขหรือลบ
-    - ระบบต่อต้านการเจาะช่องโหว่ XSS Injection เต็มรูปแบบ ทั้งรูปแบบแสดงผล DOM Elements (เช่น Format Badge) และ JSON Encodings ครบวงจร
-    - ขึงระบบป้องกัน Cross-Site Request Forgery (CSRF) เต็มพิกัดทุก Endpoint รวมถึงจัดการ Session Cookies ทิ้งทันทีเมื่อกดออกจากระบบ เพื่อป้องกัน Session Fixation อย่างรัดกุม
-    - **Anti-Brute Force Login:** ระบบจับตากลไกการเข้าสู่ระบบ ล็อกการพยายามล็อกอินผิดพลาดเกินกำหนด (Lockout) เพื่อป้องกันการเจาะระบบรหัสผ่าน
-    - **Strict Data Scoping:** การป้องกันและคัดกรอง Data Filter Level ป้องกันไม่ให้เจ้าหน้าที่ระดับปฏิบัติงาน (Reporter/Editor) ยิง Request API ข้ามแผนกตัวเองได้โดยเด็ดขาด
+    - ลบจุดบอด N+1 Database Query ด้วยเอนจิน **O(1) Bulk Array Fetching** และ **Atomic Transactions** บีบอัดลูปการ Insert ให้กลายเป็น Transaction เดียว (เช่น สร้าง Rundown หรือ @Mentions) ลด I/O ดิสก์ได้มหาศาล
+    - ระบบขจัดจุดอ่อน SQL Injection ด้วย **Prepared Statements บริสุทธิ์** ในทุกช่องทาง ลดช่องโหว่การโจรกรรมฐานข้อมูลเป็น 0% ผนวกเสริม Data Integrity Constraints
+    - ระบบต่อต้านการเจาะช่องโหว่ XSS Injection เต็มรูปแบบ ทั้งรูปแบบแสดงผล DOM Elements (เช่น Format Badge, Notifications) และ JSON Encodings ครบวงจร
+    - ขึงระบบป้องกัน Cross-Site Request Forgery (CSRF) เต็มพิกัดทุก Endpoint ทั้งฝั่ง Session และ API
+    - **Rate Limit & IP Spoofing Protection:** กลไกป้องกันการรัวรีเควสต์ (DDoS/Spam) พร้อม Garbage Collection ซ่อมแซมช่องโหว่ IP หลอกผ่าน X-Forwarded-For ดักจับ Client IP ที่แท้จริง
+    - **Strict Security Headers:** ยกระดับมาตรฐานการส่งออก API ด้วย `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` 
+    - **Advanced Engine Tuning:** ยกระดับประสิทธิภาพ SQLite ด้วย `PRAGMA mmap_size` และ `busy_timeout` เปิดการอ่านแบบ Memory-Mapped I/O และขยายเพดานรองรับการเขียนชนกันได้ 100%
+    - **Anti-Brute Force Login:** ระบบจับตากลไกการเข้าสู่ระบบ ล็อกการพยายามล็อกอินผิดพลาดเกินกำหนด (Lockout)
+    - **Strict Data Scoping:** การป้องกันและคัดกรอง Data Filter Level ป้องกันไม่ให้พนักงานยิง Request API ข้ามแผนกตัวเองได้โดยเด็ดขาด
 
 15. **ระบบกระดานควบคุมข้อมูลและสถิติขั้นสูง (High-Performance Executive Dashboard)**
     - แบ่งโครงสร้าง UI ออกเป็น 2 แท็บ (Tab Navigation) เพื่อแยกขอบเขตการดูข้อมูลอย่างเป็นระเบียบ:
@@ -125,6 +128,11 @@
     - ระบบบันทึก Log เก็บไฟล์แยกเป็นรายวันครอบคลุมการเข้าสู่ระบบ, ลบข่าว, เปลี่ยนลำดับ Rundown และการปรับเปลี่ยนเนื้อหา Master Data 
     - ฟังก์ชัน Dropdown Checkbox Multi-select คัดกรองความรุนแรง (Level) และ หมวดหมู่ (Modules) เพื่อเจาะวิเคราะห์เหตุการณ์ ERROR เฉพาะส่วน พร้อมช่องค้นหาข้อความรวดเร็ว
     - **Smart IP & Threat Detection:** ระบบแจ้งเตือน IP แปลกปลอมเมื่อมีการล็อกอินจากอุปกรณ์ใหม่ และระบบไฮไลต์เน้นย้ำความสนใจสำหรับเหตุการณ์ที่มีความเสี่ยงสูง (High-Risk Actions) เช่น การลบผู้ใช้หรือดึงเวอร์ชันข่าวคืน
+
+19. **เทคโนโลยีการเชื่อมต่อขั้นสูง (Broadcast & Digital Bridge + PWA)**
+    - **📺 Web-Based Teleprompter Mode:** เปลี่ยนหน้าจอให้เป็นระบบสคริปต์วิ่ง (Prompter) ตัวอักษรสีขาวขนาดใหญ่บนพื้นดำ รองรับการควบคุมความเร็ว ซูมฟอนต์ และปุ่ม Mirror เพื่อสะท้อนข้อความสำหรับหน้าจอกระจกในสตูออกอากาศ
+    - **🌐 Digital CMS Publishing:** ปุ่ม Publish Digital ที่เชื่อมโยงบทข่าวด้านโทรทัศน์ สู่การเป็นบทความบนหน้าเว็บไซต์ พร้อมหน้าต่าง Editor ให้ปรับแก้พาดหัวก่อนยิง API เข้าหลังบ้าน (เช่น WordPress) แบบแนบเนียน
+    - **🚀 PWA & Offline Sync Architecture:** ติดตั้ง Service Worker แปลงหน้าต่าง Newsroom ให้กลายเป็นแอปพลิเคชัน (Progressive Web App) สามารถเซฟร่างข่าวลงแคช (localStorage) ตอนอินเทอร์เน็ตหลุดออฟไลน์ได้ 100% และมีระบบ Background Auto-Sync ที่จะยิงข้อมูลกลับขึ้นเซิร์ฟเวอร์ให้อัตโนมัติในเสี้ยววินาทีเมื่อกลับมาเชื่อมต่อออนไลน์
 
 ---
 
@@ -171,6 +179,8 @@
 - `print_assignment.php` - สคริปต์สั่งพิมพ์ใบหมายงาน
 - `login.php` / `logout.php` - ระบบป้องกันและตรวจสอบ Session
 - `system_check.php` - เครื่องมือตรวจสอบระบบ ฐานข้อมูล และซ่อมแซมแวดล้อมอัตโนมัติ (System Diagnostics & Auto-fix)
+- `prompter.php` - หน้าต่างระบบอ่านข่าวแบบ Full-screen สคริปต์วิ่งในสตูดิโอ (Teleprompter Mode)
+- `sw.js` / `manifest.json` - หัวใจหลักของระบบแอปพลิเคชัน PWA เพื่อรองรับระบบ Offline Sync
 - `api.php` - เอนจินหลังบ้านทำหน้าที่รับ JSON Payload, ขับเคลื่อนฐานข้อมูล, ลอจิก Soundex
 - `db.php` - เอนจินตั้งต้น SQLite 
 - `js/` - โมดูลแยกการทำงาน JavaScript ตามฟังก์ชัน (ES6) 

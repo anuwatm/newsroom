@@ -84,6 +84,38 @@ try {
     </div>
 
 <script>
+    // PWA Service Worker Registration
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('sw.js').catch(err => console.log('SW failed:', err));
+        });
+    }
+
+    // Offline mode badge
+    window.addEventListener('offline', () => {
+        Swal.fire({
+            toast: true,
+            position: 'top-end',
+            icon: 'warning',
+            title: 'You are offline. Working locally.',
+            showConfirmButton: false,
+            timer: 3000
+        });
+    });
+    window.addEventListener('online', () => {
+        Swal.fire({
+            toast: true,
+            position: 'top-end',
+            icon: 'success',
+            title: 'Back online. Syncing...',
+            showConfirmButton: false,
+            timer: 2000
+        });
+        if (typeof syncOfflineDrafts === 'function') syncOfflineDrafts();
+    });
+
+    const escapeNotifHTML = str => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+
     async function loadNotifications() {
         try {
             const res = await fetch('api.php?action=get_notifications');
@@ -102,9 +134,9 @@ try {
                     } else {
                         list.innerHTML = json.data.map(n => `
                             <div style="padding: 10px; border-bottom: 1px solid #333; background: ${n.is_read == 0 ? '#1a2b3c' : 'transparent'};">
-                                <a href="${n.link || '#'}" onclick="markNotifRead(${n.id})" style="color: #fff; text-decoration: none; display: block;">
-                                    ${n.message}
-                                    <div style="font-size: 11px; color: #888; margin-top: 4px;">${n.created_at}</div>
+                                <a href="${escapeNotifHTML(n.link || '#')}" onclick="markNotifRead(${n.id})" style="color: #fff; text-decoration: none; display: block;">
+                                    ${escapeNotifHTML(n.message)}
+                                    <div style="font-size: 11px; color: #888; margin-top: 4px;">${escapeNotifHTML(n.created_at)}</div>
                                 </a>
                             </div>
                         `).join('');

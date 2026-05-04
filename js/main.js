@@ -338,6 +338,20 @@ async function saveStory(isAutoSave = false) {
             csrf_token: window.currentUser ? window.currentUser.csrfToken : ''
         };
 
+        if (!navigator.onLine) {
+            localStorage.setItem('offline_draft_' + State.currentStoryId, JSON.stringify(payload));
+            if (!isAutoSave) {
+                Elements.btnSave.style.backgroundColor = '#f39c12';
+                Elements.btnSave.innerText = 'SAVED LOCALLY ⚠️';
+                setTimeout(() => {
+                    Elements.btnSave.style.backgroundColor = '';
+                    Elements.btnSave.innerText = 'SAVE STORY';
+                    Elements.btnSave.disabled = false;
+                }, 3000);
+            }
+            return true;
+        }
+
         const result = await saveStoryData(payload);
         if (result.success) {
             State.currentStoryId = result.story_id;
@@ -612,3 +626,68 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 });
+window.openPrompter = function() { 
+    if(!State.currentStoryId) { Swal.fire('Error', 'Please save the story first.', 'error'); return; } 
+    window.open('prompter.php?id=' + State.currentStoryId, '_blank'); 
+};
+
+window.publishDigital = function() { 
+    if(!State.currentStoryId) { Swal.fire('Error', 'Please save the story first.', 'error'); return; } 
+    const headline = Elements.metaSlug ? Elements.metaSlug.value : 'Untitled'; 
+    let cleanContent = '';
+    document.querySelectorAll('.script-row').forEach(row => {
+        cleanContent += row.querySelector('.read-input').value + "\n\n";
+    });
+    
+    Swal.fire({ 
+        title: 'Publish to Digital CMS', 
+        html: '<input id="swal-input1" class="swal2-input" placeholder="Headline" value="' + escapeHTML(headline) + '"><textarea id="swal-input2" class="swal2-textarea" placeholder="Web Content" style="height: 200px;">' + escapeHTML(cleanContent.trim()) + '</textarea>', 
+        focusConfirm: false, 
+        showCancelButton: true, 
+        confirmButtonText: 'Publish', 
+        preConfirm: () => { 
+            return { headline: document.getElementById('swal-input1').value, content: document.getElementById('swal-input2').value } 
+        } 
+    }).then((result) => { 
+        if (result.isConfirmed) { 
+            fetch('api.php?action=publish_to_cms', { 
+                method: 'POST', 
+                headers: {'Content-Type': 'application/json'}, 
+                body: JSON.stringify({ id: State.currentStoryId, headline: result.value.headline, content: result.value.content, csrf_token: window.currentUser ? window.currentUser.csrfToken : '' }) 
+            }).then(res => res.json()).then(res => { 
+                if(res.success) { 
+                    Swal.fire('Published!', 'Story published to ' + res.url, 'success'); 
+                    const btn = document.getElementById('btn-publish'); 
+                    if(btn) {
+                        btn.innerHTML = '<i class="fa-solid fa-check"></i> PUBLISHED'; 
+                        btn.classList.remove('btn-warning'); 
+                        btn.classList.add('btn-success'); 
+                    }
+                } else { 
+                    Swal.fire('Error', res.error, 'error'); 
+                } 
+            }); 
+        } 
+    }); 
+};
+
+window.syncOfflineDrafts = async function() {
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith('offline_draft_')) {
+            try {
+                const payload = JSON.parse(localStorage.getItem(key));
+                payload.is_autosave = true; // Sync seamlessly
+                const res = await fetch('api.php?action=save_story', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                }).then(r => r.json());
+                if (res.success) {
+                    localStorage.removeItem(key);
+                    console.log('Synced offline draft:', key);
+                }
+            } catch (e) { console.error('Failed to sync', key, e); }
+        }
+    }
+};

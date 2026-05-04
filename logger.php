@@ -15,7 +15,7 @@ function write_log($action, $details = '', $level = 'INFO') {
     $ip = $_SERVER['REMOTE_ADDR'] ?? 'UNKNOWN';
     if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
         $forwarded = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
-        $forwarded_ip = trim(end($forwarded));
+        $forwarded_ip = trim(reset($forwarded));
         if (filter_var($forwarded_ip, FILTER_VALIDATE_IP)) {
             $ip = $forwarded_ip;
         }
