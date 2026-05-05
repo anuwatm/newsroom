@@ -95,6 +95,7 @@
     - ปลดล็อกอัตโนมัติรวดเร็วผ่าน `navigator.sendBeacon` พร้อมแฝง CSRF Token ป้องกันการถูกจำลองคำสั่งยิงปลดล็อกทันทีที่มีคนเปลี่ยนหน้าต่าง
 
 14. **ระบบรักษาความปลอดภัยประสิทธิภาพสูง (Security & Performance Optimization)**
+    - **MVC Architecture:** รื้อถอนระบบ API แบบเส้นตรง (Monolithic) เก่าทั้งหมด เปลี่ยนเป็นสถาปัตยกรรมแบบ Model-View-Controller (MVC) เพื่อการจัดการและแยกลอจิกที่ชัดเจน รองรับการขยายตัว (Scalability) ในอนาคต
     - โครงสร้างป้องกัน Directory Traversal ล็อกไฟล์ Database และประวัติ JSON ผ่าน `.htaccess`
     - ลบจุดบอด N+1 Database Query ด้วยเอนจิน **O(1) Bulk Array Fetching** และ **Atomic Transactions** บีบอัดลูปการ Insert ให้กลายเป็น Transaction เดียว (เช่น สร้าง Rundown หรือ @Mentions) ลด I/O ดิสก์ได้มหาศาล
     - ระบบขจัดจุดอ่อน SQL Injection ด้วย **Prepared Statements บริสุทธิ์** ในทุกช่องทาง ลดช่องโหว่การโจรกรรมฐานข้อมูลเป็น 0% ผนวกเสริม Data Integrity Constraints
@@ -181,9 +182,12 @@
 - `system_check.php` - เครื่องมือตรวจสอบระบบ ฐานข้อมูล และซ่อมแซมแวดล้อมอัตโนมัติ (System Diagnostics & Auto-fix)
 - `prompter.php` - หน้าต่างระบบอ่านข่าวแบบ Full-screen สคริปต์วิ่งในสตูดิโอ (Teleprompter Mode)
 - `sw.js` / `manifest.json` - หัวใจหลักของระบบแอปพลิเคชัน PWA เพื่อรองรับระบบ Offline Sync
-- `api.php` - เอนจินหลังบ้านทำหน้าที่รับ JSON Payload, ขับเคลื่อนฐานข้อมูล, ลอจิก Soundex
-- `db.php` - เอนจินตั้งต้น SQLite 
+- `api.php` - เมนสวิตช์เราเตอร์ (MVC Router) ทำหน้าที่แยกแยะ Request ไปยัง Controllers ต่างๆ
+- `app/Controllers/` - โฟลเดอร์หลักสำหรับโครงสร้างแบบ MVC (Story, Assignment, Dashboard ฯลฯ)
+- `app/Core/Database.php` - คลาสเชื่อมต่อฐานข้อมูล (Database Singleton)
+- `db.php` - สคริปต์ตั้งต้นและ Auto-migrate ฐานข้อมูล SQLite 
 - `js/` - โมดูลแยกการทำงาน JavaScript ตามฟังก์ชัน (ES6) 
 - `style.css` - สไตล์ดีไซน์หลักกระจกแบบพรีเมียม (Premium Theme)
 - `database/` - ซุ้มเก็บไฟล์ SQLite (`newsroom.sqlite`)
 - `data/stories/` - ซุ้มเก็บประวัติข้อความและเวอร์ชัน JSON
+- `data/log/` - ซุ้มเก็บประวัติ Audit Logs แบ่งรายวัน

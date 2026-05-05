@@ -628,7 +628,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 window.openPrompter = function() { 
     if(!State.currentStoryId) { Swal.fire('Error', 'Please save the story first.', 'error'); return; } 
-    window.open('prompter.php?id=' + State.currentStoryId, '_blank'); 
+    window.open('index.php?page=prompter&id=' + State.currentStoryId, '_blank'); 
 };
 
 window.publishDigital = function() { 

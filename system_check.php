@@ -5,7 +5,7 @@ session_start();
 // Database variables
 $dbFile = __DIR__ . '/database/newsroom.sqlite';
 $missingTables = [];
-$requiredTables = ['roles', 'departments', 'users', 'stories', 'rundowns', 'rundown_stories', 'programs', 'assignments', 'assignment_trips', 'assignment_equipment', 'equipment_master'];
+$requiredTables = ['roles', 'departments', 'users', 'stories', 'rundowns', 'rundown_stories', 'programs', 'assignments', 'assignment_trips', 'assignment_equipment', 'equipment_master', 'notifications', 'rundown_snapshots', 'system_settings', 'story_comments', 'active_viewers', 'api_rate_limits'];
 
 if (file_exists($dbFile)) {
     try {

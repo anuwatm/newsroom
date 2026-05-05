@@ -1,0 +1,2 @@
+[2026-05-04 14:39:19] [WARNING] [::1] [Guest] [LOGIN_FAILED] Failed attempt (1/5) for user: admin
+[2026-05-04 14:39:25] [INFO] [::1] [Emp: admin/บกกลาง] [LOGIN_SUCCESS] Logged in successfully to Role: บกกลาง

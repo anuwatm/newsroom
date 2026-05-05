@@ -66,7 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnPrintRundown) {
         btnPrintRundown.addEventListener('click', () => {
             if (currentRundownId) {
-                window.open('print_rundown.php?id=' + currentRundownId, '_blank');
+                window.open('index.php?page=print_rundown&id=' + currentRundownId, '_blank');
             }
         });
     }
@@ -280,7 +280,7 @@ function renderBoard(data) {
             `<button class="btn-outline toggle-drop" data-id="${story.rundown_story_id}" data-val="1" title="Drop Story" style="border:none; color:#f44336;"><i class="fa-solid fa-ban"></i></button>`;
 
         const editBtn = story.format === 'BREAK' ? '' : `<button class="btn-outline" onclick="window.open('index.php?id=${story.id}', '_blank')" title="Edit Story" style="border:none;"><i class="fa-solid fa-pen"></i></button>`;
-        const printBtn = story.format === 'BREAK' ? '' : `<button class="btn-outline" onclick="window.open('print_story.php?id=${story.id}', '_blank')" title="Print Story" style="border:none; color:#ddd;"><i class="fa-solid fa-print"></i></button>`;
+        const printBtn = story.format === 'BREAK' ? '' : `<button class="btn-outline" onclick="window.open('index.php?page=print_story&id=${story.id}', '_blank')" title="Print Story" style="border:none; color:#ddd;"><i class="fa-solid fa-print"></i></button>`;
 
         let pColor = '#4caf50';
         if (story.is_dropped == 1) pColor = '#555';

@@ -5,7 +5,7 @@ if (isset($_SESSION['user'])) {
     if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity'] > $timeout_seconds)) {
         session_unset();
         session_destroy();
-        header("Location: login.php");
+        header("Location: index.php?page=login");
         exit;
     }
     $_SESSION['last_activity'] = time();

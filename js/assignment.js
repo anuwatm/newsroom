@@ -432,7 +432,7 @@ window.openDetailModal = async (id, e) => {
             actionHtml += `<button onclick="Swal.close(); completeAssignment(${id})" style="background:#2196F3;color:#fff;border:none;padding:10px 16px;border-radius:6px;cursor:pointer;">✅ เคลียร์เสร็จสิ้น</button>`;
         }
 
-        actionHtml += `<a href="print_assignment.php?id=${id}" target="_blank" style="background:#555;color:#fff;border:none;padding:10px 16px;border-radius:6px;cursor:pointer;text-decoration:none;"><i class="fa-solid fa-print"></i> พิมพ์</a>`;
+        actionHtml += `<a href="index.php?page=print_assignment&id=${id}" target="_blank" style="background:#555;color:#fff;border:none;padding:10px 16px;border-radius:6px;cursor:pointer;text-decoration:none;"><i class="fa-solid fa-print"></i> พิมพ์</a>`;
 
         Swal.fire({
             title: `[${escapeHTML(a.status)}] ${escapeHTML(a.title)}`,
